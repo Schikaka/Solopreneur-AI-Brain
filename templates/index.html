@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NarrativeAI Preview</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111827'/%3E%3Ctext x='32' y='41' text-anchor='middle' font-family='Arial' font-size='30' font-weight='700' fill='white'%3EN%3C/text%3E%3C/svg%3E">
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fb;
+        --surface: #ffffff;
+        --surface-strong: #111827;
+        --text: #172033;
+        --muted: #667085;
+        --line: #dbe1ea;
+        --blue: #2563eb;
+        --teal: #0f766e;
+        --amber: #b45309;
+        --green: #15803d;
+        --shadow: 0 18px 45px rgba(20, 32, 55, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, rgba(37, 99, 235, 0.08), rgba(37, 99, 235, 0) 320px),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 22px 0 36px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 28px;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--surface-strong);
+        color: white;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      .workspace {
+        display: grid;
+        grid-template-columns: 340px 1fr;
+        gap: 18px;
+        align-items: start;
+      }
+
+      .panel,
+      .metric,
+      .insight {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .panel {
+        padding: 18px;
+      }
+
+      .panel h1,
+      .panel h2,
+      .report h2 {
+        margin: 0;
+        letter-spacing: 0;
+      }
+
+      .panel h1 {
+        max-width: 280px;
+        font-size: 30px;
+        line-height: 1.08;
+      }
+
+      .panel p {
+        margin: 12px 0 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .upload-box {
+        margin-top: 22px;
+        padding: 14px;
+        border: 1px dashed #aeb8c8;
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .file-input {
+        width: 100%;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        color: var(--muted);
+      }
+
+      .upload-box label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .button {
+        min-height: 42px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--blue);
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .button.secondary {
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--text);
+      }
+
+      .button:hover {
+        filter: brightness(0.97);
+      }
+
+      .report {
+        display: grid;
+        gap: 18px;
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .metric {
+        min-height: 112px;
+        padding: 15px;
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 12px;
+        font-size: 27px;
+        line-height: 1;
+      }
+
+      .section {
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .section-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 16px;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+
+      .section h2 {
+        font-size: 18px;
+      }
+
+      .section small {
+        color: var(--muted);
+      }
+
+      .insights {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .insight {
+        padding: 15px;
+        box-shadow: none;
+      }
+
+      .insight b {
+        display: block;
+        color: var(--teal);
+        font-size: 13px;
+      }
+
+      .insight strong {
+        display: block;
+        margin: 8px 0;
+        font-size: 25px;
+      }
+
+      .insight p,
+      .narrative {
+        margin: 0;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .chart {
+        display: grid;
+        gap: 12px;
+      }
+
+      .bar-row {
+        display: grid;
+        grid-template-columns: 96px 1fr 74px;
+        align-items: center;
+        gap: 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .bar-track {
+        height: 12px;
+        border-radius: 999px;
+        background: #e8edf5;
+        overflow: hidden;
+      }
+
+      .bar {
+        height: 100%;
+        min-width: 4px;
+        border-radius: inherit;
+        background: linear-gradient(90deg, var(--blue), var(--teal));
+      }
+
+      .empty {
+        padding: 40px;
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        text-align: center;
+      }
+
+      .error {
+        margin-top: 14px;
+        color: #b42318;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      @media (max-width: 900px) {
+        .workspace {
+          grid-template-columns: 1fr;
+        }
+
+        .metrics,
+        .insights {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 620px) {
+        .shell {
+          width: min(100% - 20px, 1180px);
+          padding-top: 16px;
+        }
+
+        .topbar,
+        .section-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .metrics,
+        .insights,
+        .actions {
+          grid-template-columns: 1fr;
+        }
+
+        .bar-row {
+          grid-template-columns: 74px 1fr 60px;
+          gap: 8px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">N</div>
+          <span>NarrativeAI</span>
+        </div>
+        <div class="status"><span class="dot" aria-hidden="true"></span><span>Local preview running</span></div>
+      </header>
+
+      <div class="workspace">
+        <aside class="panel">
+          <h1>Client report narrative builder</h1>
+          <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
+          <form class="upload-box" id="upload-form">
+            <label for="csv-file">Marketing CSV</label>
+            <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
+            <div class="actions">
+              <button class="button" type="submit">Analyze CSV</button>
+              <button class="button secondary" id="sample-button" type="button">Use Sample</button>
+            </div>
+            <div class="error" id="error" role="alert"></div>
+          </form>
+        </aside>
+
+        <section class="report" id="report">
+          <div class="empty">Loading sample report...</div>
+        </section>
+      </div>
+    </main>
+
+    <script>
+      const report = document.querySelector("#report");
+      const form = document.querySelector("#upload-form");
+      const sampleButton = document.querySelector("#sample-button");
+      const errorBox = document.querySelector("#error");
+
+      const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      })[char]);
+
+      function metric(label, value) {
+        return `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`;
+      }
+
+      function renderReport(data) {
+        const stats = data.stats;
+        const maxRevenue = Math.max(...data.daily_trends.map((day) => day.revenue), 1);
+
+        report.innerHTML = `
+          <div class="metrics">
+            ${metric("Revenue", money(stats.total_revenue))}
+            ${metric("Spend", money(stats.total_spend))}
+            ${metric("Avg ROAS", `${stats.avg_roas}x`)}
+            ${metric("Conversions", stats.total_conversions.toLocaleString())}
+          </div>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Insights</h2>
+              <small>${escapeHtml(stats.top_campaign)}</small>
+            </div>
+            <div class="insights" id="insights-container">
+              ${data.insights.map((insight) => `
+                <article class="insight">
+                  <b>${escapeHtml(insight.title)}</b>
+                  <strong>${escapeHtml(insight.value)}</strong>
+                  <p>${escapeHtml(insight.detail)}</p>
+                </article>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Daily Revenue</h2>
+              <small>${data.daily_trends.length} reporting days</small>
+            </div>
+            <div class="chart">
+              ${data.daily_trends.map((day) => `
+                <div class="bar-row">
+                  <span>${escapeHtml(day.date.slice(5))}</span>
+                  <div class="bar-track"><div class="bar" style="width: ${(day.revenue / maxRevenue) * 100}%"></div></div>
+                  <strong>${money(day.revenue)}</strong>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-head">
+              <h2>Narrative</h2>
+              <small>Draft summary</small>
+            </div>
+            <p class="narrative">${escapeHtml(data.narrative)}</p>
+          </section>
+        `;
+      }
+
+      async function loadSample() {
+        errorBox.textContent = "";
+        try {
+          const response = await fetch("/api/sample");
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || "Sample report could not be loaded.");
+          }
+          renderReport(data);
+        } catch (error) {
+          report.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+        }
+      }
+
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        errorBox.textContent = "";
+
+        const file = document.querySelector("#csv-file").files[0];
+        if (!file) {
+          errorBox.textContent = "Choose a CSV file first.";
+          return;
+        }
+
+        const body = new FormData();
+        body.append("file", file);
+
+        try {
+          const response = await fetch("/api/analyze", { method: "POST", body });
+          const data = await response.json();
+
+          if (!response.ok) {
+            throw new Error(data.error || "The CSV could not be analyzed.");
+          }
+
+          renderReport(data);
+        } catch (error) {
+          errorBox.textContent = error.message;
+        }
+      });
+
+      sampleButton.addEventListener("click", loadSample);
+      loadSample();
+    </script>
+  </body>
+</html>

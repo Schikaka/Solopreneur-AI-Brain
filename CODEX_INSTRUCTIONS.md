@@ -1,1 +1,52 @@
-IyBDb2RleCBCdWlsZCAmIE1hbmFnZW1lbnQgSW5zdHJ1Y3Rpb25zCgpVc2UgdGhlc2Ugc3BlY2lmaWMgcHJvbXB0IHNlcXVlbmNlcyB0byBtYW5hZ2UsIGJ1aWxkLCBhbmQgc2NhbGUgTmFycmF0aXZlQUkgb24gdGhpcyBsb2NhbCBtYWNoaW5lLgoKIyMg8J+foSBDb21tYW5kOiAiSW5pdGlhbGl6ZSBQcm9qZWN0IgoqKkNvZGV4IEFjdGlvbjpoKioKMS4gQ3JlYXRlIGEgdmlydHVhbCBlbnZpcm9ubWVudDogYHB5dGhvbiAtbSB2ZW52IHZlbnZgLgoyLiBBY3RpdmF0ZSBpdCBhbmQgaW5zdGFsbCBkZXBlbmRlbmNpZXM6IGBwaXAgaW5zdGFsbCAtciByZXF1aXJlbWVudHMudHh0YC4KMy4gQ2hlY2sgZm9yIGAuZW52YC4gSWYgbWlzc2luZywgY3JlYXRlIGl0IGZyb20gYC5lbnYuZXhhbXBsZWAuCjQuIEVuc3VyZSB0aGUgYHVwbG9hZHMvYCBmb2xkZXIgZXhpc3RzLgoKIyMg8J+agSBDb21tYW5kOiAiUnVuIEFwcCIKKipDb2RleCBBY3Rpb246KioKMS4gU3RhcnQgdGhlIEZsYXNrIHNlcnZlcjogYHB5dGhvbiBhcHAucHlgLgoyLiBQcm92aWRlIHRoZSBsb2NhbCBVUkw6IGBodHRwOi8vMTI3LjAuMC4xOjUwMDBgLgozLiBNb25pdG9yIGNvbnNvbGUgZm9yIGFueSBQT1NUIGVycm9ycyBkdXJpbmcgQ1NWIHVwbG9hZHMuCgojIyDwn6ebIENvbm1hbmQ6ICJUZXN0IHdpdGggRHVtbXkgRGF0YSIKKipDb2RleCBBY3Rpb246KioKMS4gVmVyaWZ5IGBkdW1teV9tYXJrZXRpbmdfZGF0YS5jc3ZgIGV4aXN0cy4KMi4gUnVuIGBweXRob24gbmFycmF0aXZlX2xvZ2ljLnB5YCBkaXJlY3RseSB0byBlbnN1cmUgdGhlIEFJIG5hcnJhdGl2ZSBnZW5lcmF0aW9uIGxvZ2ljIGlzIHJlYWNoaW5nIHRoZSBBUEkgYW5kIHJldHVybmluZyBhIHZhbGlkIHN0cmluZy4KCgojIyDwn5iIIENvbW1hbmQ6ICJBZGQgSW5zaWdodHMgRmVhdHVyZSIKKipDb2RleCBBY3Rpb246KioKMS4gT3BlbiBgbmFycmF0aXZlX2xvZ2ljLnB5YC4KMi4gQWRkIGxvZ2ljIHRvIGZpbmQ6CiAgIC0gVGhlIGRheSB3aXRoIHRoZSBoaWdoZXN0IFJPQVMuCiAgIC0gVGhlIGNhbXBhaWduIHdpdGggdGhlIGxvd2VzdCBjb3N0LXBlci1jbGljay4KICAgLSBUb3RhbCBDb252ZXJzaW9uIGdyb3d0aCBpZiBkYXRlLXNlcmllcyBpcyBwcmVzZW50LgozLiBVcGRhdGUgdGhlIEpTT04gcmV0dXJuIG9iamVjdCB0byBpbmNsdWRlIGFuIGBpbnNpZ2h0c2AgYXJyYXkuCgoKIyMg8J+foSBDb21tYW5kOiAiU3luYyBVSSB3aXRoIExvZ2ljIgoqKkNvZGV4IEFjdGlvbjpoKioKMS4gT3BlbiBgdGVtcGxhdGVzL2luZGV4Lmh0bWxgLgoyLiBVcGRhdGUgdGhlIEphdmFTY3JpcHQgYGZldGNoYCBibG9jayB0byBoYW5kbGUgdGhlIG5ldyBgaW5zaWdodHNgIGRhdGEgZnJvbSB0aGUgYmFja2VuZC4KMy4gQWRkIGEgbmV3IEhUTUwgZGl2IHdpdGggSUQgYGluc2lnaHRzLWNvbnRhaW5lcmAgdG8gZGlzcGxheSB0aGVzZSBhcyAnVmlzdWFsIEJhZGdlcycuCgoKIyMg8J+TpSBDb21tYW5kOiAiUHVzaCBVcGRhdGUiCioqQ29kZXggQWN0aW9uOioqCjEuIFN0YWdlIGFsbCBjaGFuZ2VzOiBgZ2l0IGFkZCAuYC4KMi4gQ29tbWl0IHdpdGggYSBkZXNjcmlwdGl2ZSBtZXNzYWdlOiBgZ2l0IGNvbW1pdCAtbSAiVXBkYXRlZCBbRmVhdHVyZSBOYW1lXSJgLgozLiBQdXNoIHRvIG1haW46IGBnZXQgcHVzaCBvcmlnaW4gbWFpbmAuCg==
+# Codex Build & Management Instructions
+
+Use these command-oriented workflows to manage, build, and scale NarrativeAI on
+this local machine.
+
+## Command: "Initialize Project"
+
+1. Create a virtual environment: `python3 -m venv venv`.
+2. Install runtime and development dependencies:
+   `venv/bin/python -m pip install -r requirements.txt -r requirements-dev.txt`.
+3. Check for `.env`. If missing, create it from `.env.example`.
+4. Ensure the `uploads/` folder exists.
+
+## Command: "Run App"
+
+1. Start the Flask development server: `venv/bin/python app.py`.
+2. Provide the local URL: `http://127.0.0.1:5000`.
+3. Monitor the console for POST errors during CSV uploads.
+
+## Command: "Run Production Server"
+
+1. Start Gunicorn:
+   `venv/bin/gunicorn "app:create_app()" --bind 0.0.0.0:${PORT:-5000}`.
+2. Verify the health endpoint: `curl http://127.0.0.1:5000/healthz`.
+
+## Command: "Test with Dummy Data"
+
+1. Verify `dummy_marketing_data.csv` exists.
+2. Run `venv/bin/python narrative_logic.py`.
+3. Run `venv/bin/python -m pytest`.
+
+## Command: "Add Insights Feature"
+
+1. Open `narrative_logic.py`.
+2. Add or update logic for:
+   - The day with the highest ROAS.
+   - The campaign with the lowest cost-per-click.
+   - Total conversion growth when a date series is present.
+3. Update the JSON return object to include an `insights` array.
+
+## Command: "Sync UI with Logic"
+
+1. Open `templates/index.html`.
+2. Update the JavaScript `fetch` block to handle backend insight data.
+3. Display insights in the `insights-container` area as visual badges.
+
+## Command: "Push Update"
+
+1. Review the diff: `git diff`.
+2. Stage intended changes: `git add <files>`.
+3. Commit with a descriptive message.
+4. Push to main: `git push origin main`.

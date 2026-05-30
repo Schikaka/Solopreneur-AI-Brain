@@ -1,1 +1,40 @@
-IyBOYXJyYXRpdmVBSTogVGhlICQxLDAwMC9tbyBTaWRlLUh1c3RsZSBCaWJsZSAoMjAyNikKCiMjIDEuIFRoZSBWYWx1ZSBQcm9wb3NpdGlvbgpNYXJrZXRpbmcgYWdlbmNpZXMgc3BlbmQgNS0xMCBob3VycyBhIG1vbnRoIHBlciBjbGllbnQgd3JpdGluZyAiRXhlY3V0aXZlIE5hcnJhdGl2ZXMuIgogLSBUaGUgT2xkIFdheTogQW4gYWNjb3VudCBtYW5hZ2VyIGxvb2tzIGF0IGEgZGFzaGJvYXJkLCB0eXBlcyBvdXQgIlJldmVudWUgd2FzIHVwIDEwJSBiZWNhdXNlLi4uIiwgYW5kIGVtYWlscyBpdC4KIC0gVGhlIE5hcnJhdGl2ZUFJIFdheTogVXBsb2FkIENTVi4gR2V0IE5hcnJhdGl2ZS4gUGFzdGUgaW4gRW1haWwuIERvbmUgaW4gMzAgc2Vjb25kcy4KCgojIyAyLiBQcmljaW5nICYgQXJiaXRyYWdlCiAtIFlvdXIgQ29zdDogfiQwLjAwNSBwZXIgcmVwb3J0IChEZWVwU2Vlay1WMy9HUFRDLTRvLW1pbmkpLgogLSBDbGllbnQgUHJpY2U6ICQ0OS9tb250aCAoU3RhbmRhcmQgQWdlbmN5IFRpZXIpLgogLSBUaGUgSG9vazogIlN0b3AgcGF5aW5nIGEganVuaW9yIGFuYWx5c3QgJDI1L2hyIHRvIHdyaXRlIHJlcG9ydHMuIFVzZSBOYXJyYXRpdmVBSSBmb3IgJDEuNjAgYSBkYXkuIgoKCiMjIDMuIFRoZSBTYWxlcyBTY3JpcHQgKENvbGQgT3V0cmVhY2gpCiJIZXkgW05hbWVdLCBJIG5vdGljZWQgW0FnZW5jeSBOYW1lXSBkb2VzIGEgbG90IG9mIGdyZWF0IHdvcmsgaW4gW05pY2hlXS4gUXVpY2sgcXVlc3Rpb246IEhvdyBtdWNoIHRpbWUgZG9lcyB5b3VyIHRlYW0gc3BlbmQgd3JpdGluZyBtYW51YWwgbW9udGhseSByZXBvcnRzIGZvciBjbGllbnRzPyBJIGJ1aWx0IGEgdG9vbCBjYWxsZWQgTmFycmF0aXZlQUkgdGhhdCBoYW5kbGVzIHRoZSBuYXJyYXRpdmUgd3JpdGluZyBwYXJ0IGluIHNlY29uZHMuIENhbiBJIHNlbmQgeW91IGEgNjAtc2Vjb25kIGRlbW8/IgoKCiMjIDQuIE1hcmtldGluZyBSb2FkbWFwCiAtIFBoYXNlIDE6IFBvc3QgYSAiUmFwaWQgRGVtbyIgdmlkZW8gb24gVHdpdHRlci9YIHVzaW5nIHRoZSBWaXJhbCBCbHVlcHJpbnQgdGVtcGxhdGVzLgotIFBoYXNlIDI6IFN1Ym1pdCB0byAiQUkgVG9vbCBEaXJlY3RvcmllcyIgKFRoZXJlc0FuQUlGb3JUaGF0LCBGdXR1cmVUb29scykuCiAtIFBoYXNlIDM6IERpcmVjdCBvdXRyZWFjaCB0byAiQm91dGlxdWUgQWdlbmNpZXMiICg1LTEwIGVtcGxveWVlcykgb24gTGlua2VkSW4uCgoKIyMgNS4gRmVhdHVyZSBNb2F0IChTY2FsaW5nIFVwKQpPbmNlIHlvdSBoYXZlIDUgcGF5aW5nIHVzZXJzLCBoYXZlIENvZGV4IGFkZDoKMS4gRGlyZWN0IEdvb2dsZSBBZHMgSW50ZWdyYXRpb246IENvbm5lY3QgdmlhIEFQSSBzbyB0aGV5IGRvbid0IGV2ZW4gaGF2ZSB0byB1cGxvYWQgYSBDU1YuCjIuIE11bHRpLUxhbmd1YWdlIFN1cHBvcnQ6IEdlbmVyYXRlIHJlcG9ydHMgaW4gU3BhbmlzaC9GcmVuY2ggZm9yIGludGVybmF0aW9uYWwgY2xpZW50cy4KMy4gQ3VzdG9tIEJyYW5kIFZvaWNlOiBBbGxvdyB0aGUgYWdlbmN5IHRvICJ0cmFpbiIgdGhlIEFJIG9uIHRoZWlyIHNwZWNpZmljIHdyaXRpbmcgc3R5bGUuCg==
+# NarrativeAI: The $1,000/mo Side-Hustle Bible (2026)
+
+## 1. The Value Proposition
+
+Marketing agencies spend 5-10 hours a month per client writing executive
+narratives.
+
+- The old way: an account manager looks at a dashboard, types out what changed,
+  and emails the client.
+- The NarrativeAI way: upload CSV, get narrative, paste in email. Done in 30
+  seconds.
+
+## 2. Pricing & Arbitrage
+
+- Your cost: roughly $0.005 per report.
+- Client price: $49/month for a standard agency tier.
+- The hook: "Stop paying a junior analyst $25/hr to write reports. Use
+  NarrativeAI for $1.60 a day."
+
+## 3. Sales Script
+
+"Hey [Name], I noticed [Agency Name] does a lot of great work in [Niche]. Quick
+question: how much time does your team spend writing manual monthly reports for
+clients? I built a tool called NarrativeAI that handles the narrative writing
+part in seconds. Can I send you a 60-second demo?"
+
+## 4. Marketing Roadmap
+
+- Phase 1: post a rapid demo video on Twitter/X using viral blueprint templates.
+- Phase 2: submit to AI tool directories such as TheresAnAIForThat and
+  FutureTools.
+- Phase 3: direct outreach to boutique agencies with 5-10 employees on LinkedIn.
+
+## 5. Feature Moat
+
+Once there are 5 paying users, add:
+
+1. Direct Google Ads integration.
+2. Multi-language report generation.
+3. Custom brand voice per agency.
