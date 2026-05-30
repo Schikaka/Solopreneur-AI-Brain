@@ -305,6 +305,36 @@
         line-height: 1.45;
       }
 
+      .form-status {
+        min-height: 20px;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .form-status.success {
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      .button:disabled {
+        cursor: wait;
+        opacity: 0.7;
+      }
+
+      .report-source {
+        padding: 13px 16px;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-size: 14px;
+        font-weight: 750;
+        overflow-wrap: anywhere;
+      }
+
       @media (max-width: 900px) {
         .workspace {
           grid-template-columns: 1fr;
@@ -359,9 +389,10 @@
             <label for="csv-file">Marketing CSV</label>
             <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
             <div class="actions">
-              <button class="button" type="submit">Analyze CSV</button>
+              <button class="button" id="analyze-button" type="submit">Analyze CSV</button>
               <button class="button secondary" id="sample-button" type="button">Use Sample</button>
             </div>
+            <div class="form-status" id="form-status" role="status" aria-live="polite"></div>
             <div class="error" id="error" role="alert"></div>
           </form>
         </aside>
@@ -375,8 +406,10 @@
     <script>
       const report = document.querySelector("#report");
       const form = document.querySelector("#upload-form");
+      const analyzeButton = document.querySelector("#analyze-button");
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
+      const statusBox = document.querySelector("#form-status");
 
       const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
@@ -391,11 +424,27 @@
         return `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`;
       }
 
-      function renderReport(data) {
+      function setBusy(isBusy, message = "") {
+        analyzeButton.disabled = isBusy;
+        sampleButton.disabled = isBusy;
+        analyzeButton.textContent = isBusy ? "Analyzing..." : "Analyze CSV";
+        if (isBusy) {
+          statusBox.className = "form-status";
+          statusBox.textContent = message;
+        } else if (message) {
+          statusBox.textContent = message;
+        } else {
+          statusBox.textContent = "";
+        }
+      }
+
+      function renderReport(data, sourceLabel = "Sample data loaded") {
         const stats = data.stats;
         const maxRevenue = Math.max(...data.daily_trends.map((day) => day.revenue), 1);
 
         report.innerHTML = `
+          <div class="report-source">${escapeHtml(sourceLabel)}</div>
+
           <div class="metrics">
             ${metric("Revenue", money(stats.total_revenue))}
             ${metric("Spend", money(stats.total_spend))}
@@ -447,21 +496,28 @@
 
       async function loadSample() {
         errorBox.textContent = "";
+        setBusy(true, "Loading sample report...");
         try {
           const response = await fetch("/api/sample");
           const data = await response.json();
           if (!response.ok) {
             throw new Error(data.error || "Sample report could not be loaded.");
           }
-          renderReport(data);
+          renderReport(data, "Sample data loaded");
+          statusBox.className = "form-status success";
+          statusBox.textContent = "Sample report loaded.";
         } catch (error) {
           report.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+          errorBox.textContent = error.message;
+        } finally {
+          setBusy(false, statusBox.textContent);
         }
       }
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         errorBox.textContent = "";
+        statusBox.className = "form-status";
 
         const file = document.querySelector("#csv-file").files[0];
         if (!file) {
@@ -473,6 +529,7 @@
         body.append("file", file);
 
         try {
+          setBusy(true, `Analyzing ${file.name}...`);
           const response = await fetch("/api/analyze", { method: "POST", body });
           const data = await response.json();
 
@@ -480,9 +537,15 @@
             throw new Error(data.error || "The CSV could not be analyzed.");
           }
 
-          renderReport(data);
+          const analyzedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+          renderReport(data, `Analyzed ${file.name} at ${analyzedAt}`);
+          statusBox.className = "form-status success";
+          statusBox.textContent = `Analyzed ${file.name}.`;
+          report.scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (error) {
           errorBox.textContent = error.message;
+        } finally {
+          setBusy(false, statusBox.textContent);
         }
       });
 
