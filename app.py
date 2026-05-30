@@ -67,8 +67,11 @@ def create_app(test_config=None):
 
     @app.get("/api/sample")
     def sample_report():
+        license_key = request.args.get("license_key") or os.getenv("DEMO_LICENSE_KEY", "DEMO123")
         try:
-            return jsonify(analyze_data(app.config["SAMPLE_CSV_PATH"]))
+            return jsonify(analyze_data(app.config["SAMPLE_CSV_PATH"], license_key=license_key))
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 403
         except Exception as exc:
             app.logger.exception("Sample analysis failed")
             return jsonify({"error": str(exc)}), 400
@@ -85,9 +88,15 @@ def create_app(test_config=None):
             return jsonify({"error": "Only CSV files are supported."}), 400
 
         upload_path = app.config["UPLOAD_DIR"] / f"{uuid.uuid4().hex}-{filename}"
+        license_key = request.form.get("license_key", "").strip()
+        if not license_key:
+            return jsonify({"error": "Enter a valid license key to generate reports."}), 403
+
         try:
             uploaded_file.save(upload_path)
-            return jsonify(analyze_data(upload_path))
+            return jsonify(analyze_data(upload_path, license_key=license_key))
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 403
         except Exception as exc:
             app.logger.exception("Uploaded CSV analysis failed")
             return jsonify({"error": str(exc)}), 400

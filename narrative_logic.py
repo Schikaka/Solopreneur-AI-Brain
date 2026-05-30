@@ -42,6 +42,16 @@ def _format_money(value):
     return f"${float(value):,.2f}"
 
 
+def _fallback_narrative(stats):
+    return (
+        f"Revenue reached {_format_money(stats['total_revenue'])} from "
+        f"{_format_money(stats['total_spend'])} in spend, producing an "
+        f"average ROAS of {stats['avg_roas']}. The strongest campaign was "
+        f"{stats['top_campaign']}. Add a valid license key to generate the "
+        "full AI-written client narrative through the Gatekeeper."
+    )
+
+
 def normalize_marketing_data(df):
     if df.empty:
         raise ValueError("CSV does not contain any campaign rows.")
@@ -90,47 +100,28 @@ def read_marketing_csv(file_path):
     return normalize_marketing_data(df)
 
 
-def get_ai_narrative(stats):
-    key = os.getenv("EMERGENT_LLM_KEY")
-    if not key or key == "your_key_here":
-        return (
-            f"Revenue reached {_format_money(stats['total_revenue'])} from "
-            f"{_format_money(stats['total_spend'])} in spend, producing an "
-            f"average ROAS of {stats['avg_roas']}. The strongest campaign was "
-            f"{stats['top_campaign']}, and the latest data is ready for a client "
-            "report once an AI API key is configured."
-        )
-
-    url = os.getenv(
-        "EMERGENT_LLM_URL",
-        "https://integrations.emergentagent.com/llm/v1/chat/completions",
-    )
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json",
-    }
-
-    prompt = (
-        "You are a Senior Marketing Account Manager. Write a 3-paragraph "
-        "professional executive summary based on these stats: "
-        f"{json.dumps(stats)}"
-    )
-    data = {
-        "model": os.getenv("EMERGENT_LLM_MODEL", "gpt-4o-mini"),
-        "messages": [{"role": "user", "content": prompt}],
+def get_ai_narrative(stats, license_key):
+    gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+    payload = {
+        "stats": stats,
+        "license_key": str(license_key or "").strip(),
     }
 
     try:
         response = requests.post(
-            url,
-            headers=headers,
-            json=data,
+            f"{gatekeeper_url}/verify-and-generate",
+            json=payload,
             timeout=AI_TIMEOUT_SECONDS,
         )
+        if response.status_code == 403:
+            error = response.json().get("error", "Invalid license key.")
+            raise PermissionError(error)
         response.raise_for_status()
-        return response.json()["choices"][0]["message"]["content"]
+        return response.json()["narrative"]
+    except PermissionError:
+        raise
     except Exception as exc:
-        return f"Analysis complete. Error in AI generation: {str(exc)}"
+        return f"Analysis complete. Gatekeeper request failed: {str(exc)}"
 
 
 def build_daily_frame(df):
@@ -271,7 +262,7 @@ def get_top_3_insights(file_path):
     )[:3]
 
 
-def analyze_data(file_path):
+def analyze_data(file_path, license_key=""):
     df = read_marketing_csv(file_path)
 
     total_spend = df["Spend"].sum()
@@ -298,7 +289,7 @@ def analyze_data(file_path):
         "insights": get_insights(df),
         "top_daily_insights": get_top_3_insights(file_path),
         "daily_trends": build_daily_trends(df),
-        "narrative": get_ai_narrative(stats),
+        "narrative": get_ai_narrative(stats, license_key) if license_key else _fallback_narrative(stats),
     }
 
 

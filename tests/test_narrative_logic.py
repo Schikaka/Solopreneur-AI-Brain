@@ -17,6 +17,35 @@ def test_analyze_data_returns_expected_sample_stats():
     assert len(result["daily_trends"]) == 4
 
 
+def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"narrative": "Narrative from gatekeeper"}
+
+    def post(url, json, timeout):
+        captured["url"] = url
+        captured["payload"] = json
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("narrative_logic.requests.post", post)
+
+    result = analyze_data("dummy_marketing_data.csv", license_key="DEMO123")
+
+    assert captured["url"] == "http://gatekeeper.test/verify-and-generate"
+    assert captured["payload"]["license_key"] == "DEMO123"
+    assert captured["payload"]["stats"]["total_revenue"] == 13650.0
+    assert result["narrative"] == "Narrative from gatekeeper"
+
+
 def test_get_top_3_insights_returns_daily_significance():
     insights = get_top_3_insights("dummy_marketing_data.csv")
 

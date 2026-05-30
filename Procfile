@@ -1,1 +1,1 @@
-web: gunicorn app:app
+web: gunicorn gatekeeper_server:app

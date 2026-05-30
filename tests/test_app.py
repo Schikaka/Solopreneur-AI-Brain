@@ -11,6 +11,25 @@ def client(tmp_path):
     return app.test_client()
 
 
+@pytest.fixture(autouse=True)
+def fake_gatekeeper(monkeypatch):
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"narrative": "Gatekeeper narrative"}
+
+    def post(url, json, timeout):
+        assert url.endswith("/verify-and-generate")
+        assert json["license_key"]
+        return Response()
+
+    monkeypatch.setattr("narrative_logic.requests.post", post)
+
+
 def test_healthz(client):
     response = client.get("/healthz")
 
@@ -54,7 +73,7 @@ def test_upload_valid_csv(client):
 
     response = client.post(
         "/api/analyze",
-        data={"file": (BytesIO(csv_bytes), "report.csv")},
+        data={"file": (BytesIO(csv_bytes), "report.csv"), "license_key": "DEMO123"},
         content_type="multipart/form-data",
     )
     payload = response.get_json()

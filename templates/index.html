@@ -347,6 +347,29 @@
         font-weight: 700;
       }
 
+      .license-field {
+        margin-top: 14px;
+      }
+
+      .license-input {
+        width: 100%;
+        min-height: 40px;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+        color: var(--text);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .license-input:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        outline: none;
+      }
+
       .logo-picker {
         position: relative;
         display: grid;
@@ -600,6 +623,10 @@
               </span>
             </label>
             <div class="logo-preview" id="logo-preview">No logo uploaded</div>
+            <div class="license-field">
+              <label for="license-key">License Key</label>
+              <input class="license-input" id="license-key" type="text" placeholder="DEMO123" autocomplete="off" spellcheck="false">
+            </div>
           </section>
           <form class="upload-box" id="upload-form">
             <label for="csv-file">Marketing CSV</label>
@@ -636,7 +663,9 @@
       const statusBox = document.querySelector("#form-status");
       const logoInput = document.querySelector("#agency-logo");
       const logoPreview = document.querySelector("#logo-preview");
+      const licenseInput = document.querySelector("#license-key");
       const logoStorageKey = "narrativeai.agencyLogo";
+      const licenseStorageKey = "narrativeai.licenseKey";
       let latestNarrative = "";
       let currentReportData = null;
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
@@ -663,6 +692,10 @@
         logoPreview.innerHTML = agencyLogoDataUrl
           ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
           : "No logo uploaded";
+      }
+
+      function getLicenseKey() {
+        return licenseInput.value.trim();
       }
 
       function cleanNarrativeTitle(line) {
@@ -1012,7 +1045,8 @@
         errorBox.textContent = "";
         setBusy(true, "Loading sample report...");
         try {
-          const response = await fetch("/api/sample");
+          const licenseParam = encodeURIComponent(getLicenseKey() || "DEMO123");
+          const response = await fetch(`/api/sample?license_key=${licenseParam}`);
           const data = await response.json();
           if (!response.ok) {
             throw new Error(data.error || "Sample report could not be loaded.");
@@ -1041,6 +1075,7 @@
 
         const body = new FormData();
         body.append("file", file);
+        body.append("license_key", getLicenseKey());
 
         try {
           setBusy(true, `Analyzing ${file.name}...`);
@@ -1064,6 +1099,11 @@
       });
 
       sampleButton.addEventListener("click", loadSample);
+      licenseInput.value = localStorage.getItem(licenseStorageKey) || "";
+      licenseInput.addEventListener("input", () => {
+        localStorage.setItem(licenseStorageKey, getLicenseKey());
+      });
+
       logoInput.addEventListener("change", () => {
         errorBox.textContent = "";
         const logoFile = logoInput.files[0];
