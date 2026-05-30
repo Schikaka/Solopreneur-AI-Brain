@@ -1,1 +1,1 @@
-d2ViOiBndW5pY29ybiBhcHA6YXBwCnRlbXA6IG1rZGlyIC1wIHVwbG9hZHM=
+web: gunicorn app:app
