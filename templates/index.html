@@ -5,16 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>NarrativeAI Preview</title>
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111827'/%3E%3Ctext x='32' y='41' text-anchor='middle' font-family='Arial' font-size='30' font-weight='700' fill='white'%3EN%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;750;800&display=swap" rel="stylesheet">
     <style>
       :root {
         color-scheme: light;
-        --bg: #f7f8fb;
+        --bg: #f8fafc;
         --surface: #ffffff;
         --surface-strong: #111827;
         --text: #172033;
         --muted: #667085;
-        --line: #dbe1ea;
+        --line: #e2e8f0;
         --blue: #2563eb;
+        --slate: #334155;
         --teal: #0f766e;
         --amber: #b45309;
         --green: #15803d;
@@ -293,6 +297,151 @@
         background: #f8fafc;
       }
 
+      .copy-button.pdf-button {
+        border-color: #cbd5e1;
+        color: var(--slate);
+      }
+
+      .copy-button.pdf-button:hover {
+        border-color: var(--slate);
+        background: #f8fafc;
+      }
+
+      .branding-box {
+        margin-top: 22px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+
+      .branding-box h2 {
+        margin-bottom: 10px;
+        font-size: 16px;
+      }
+
+      .branding-box label {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 700;
+      }
+
+      .logo-picker {
+        position: relative;
+        display: grid;
+        min-height: 92px;
+        place-items: center;
+        padding: 14px;
+        border: 1px dashed #94a3b8;
+        border-radius: 8px;
+        background: #f8fafc;
+        color: var(--slate);
+        cursor: pointer;
+        text-align: center;
+      }
+
+      .logo-picker:hover {
+        border-color: var(--blue);
+        background: #f1f5f9;
+      }
+
+      .logo-picker strong,
+      .logo-picker span {
+        display: block;
+      }
+
+      .logo-picker strong {
+        font-size: 13px;
+      }
+
+      .logo-picker span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .logo-input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        opacity: 0;
+        white-space: nowrap;
+      }
+
+      .logo-preview {
+        display: flex;
+        min-height: 54px;
+        align-items: center;
+        gap: 12px;
+        margin-top: 12px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .logo-preview img,
+      .report-logo {
+        display: block;
+        width: auto;
+        max-width: 150px;
+        object-fit: contain;
+      }
+
+      .logo-preview img {
+        max-height: 48px;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+      }
+
+      .report-branding {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 20px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .report-branding h2 {
+        font-size: 20px;
+      }
+
+      .report-title {
+        text-align: right;
+      }
+
+      .report-branding small {
+        color: var(--muted);
+      }
+
+      .report-logo {
+        max-height: 58px;
+      }
+
+      .report-logo-slot {
+        display: flex;
+        min-height: 58px;
+        align-items: center;
+      }
+
+      .section-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
       .chart {
         display: grid;
         gap: 12px;
@@ -384,6 +533,7 @@
         }
 
         .topbar,
+        .report-branding,
         .section-head {
           align-items: flex-start;
           flex-direction: column;
@@ -398,6 +548,10 @@
         .bar-row {
           grid-template-columns: 74px 1fr 60px;
           gap: 8px;
+        }
+
+        .report-title {
+          text-align: left;
         }
       }
     </style>
@@ -416,6 +570,18 @@
         <aside class="panel">
           <h1>Client report narrative builder</h1>
           <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
+          <section class="branding-box">
+            <h2>Branding</h2>
+            <label for="agency-logo">Agency Logo</label>
+            <input class="logo-input" id="agency-logo" type="file" accept="image/png,image/jpeg">
+            <label class="logo-picker" for="agency-logo">
+              <span>
+                <strong>Upload Agency Logo</strong>
+                <span>PNG or JPG for report headers</span>
+              </span>
+            </label>
+            <div class="logo-preview" id="logo-preview">No logo uploaded</div>
+          </section>
           <form class="upload-box" id="upload-form">
             <label for="csv-file">Marketing CSV</label>
             <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
@@ -434,6 +600,7 @@
       </div>
     </main>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script>
       const report = document.querySelector("#report");
       const form = document.querySelector("#upload-form");
@@ -441,9 +608,19 @@
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
       const statusBox = document.querySelector("#form-status");
+      const logoInput = document.querySelector("#agency-logo");
+      const logoPreview = document.querySelector("#logo-preview");
+      const logoStorageKey = "narrativeai.agencyLogo";
       let latestNarrative = "";
+      let currentReportData = null;
+      let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
 
       const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+      const reportDate = () => new Date().toLocaleDateString(undefined, {
+        year: "numeric",
+        month: "long",
+        day: "numeric"
+      });
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
         "<": "&lt;",
@@ -454,6 +631,12 @@
 
       function metric(label, value) {
         return `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`;
+      }
+
+      function updateLogoPreview() {
+        logoPreview.innerHTML = agencyLogoDataUrl
+          ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
+          : "No logo uploaded";
       }
 
       function cleanNarrativeTitle(line) {
@@ -514,6 +697,204 @@
         textarea.remove();
       }
 
+      function getNarrativeText() {
+        return document.querySelector("#narrative-container")?.innerText || latestNarrative;
+      }
+
+      function addWrappedText(doc, text, x, y, maxWidth, lineHeight, options = {}) {
+        const lines = doc.splitTextToSize(text, maxWidth);
+        const pageHeight = doc.internal.pageSize.getHeight();
+        const bottom = options.bottom || pageHeight - 36;
+        const top = options.top || 36;
+
+        lines.forEach((line) => {
+          if (y + lineHeight > bottom) {
+            doc.addPage();
+            y = top;
+          }
+          doc.text(line, x, y);
+          y += lineHeight;
+        });
+        return y;
+      }
+
+      function containedImageSize(width, height, maxWidth, maxHeight) {
+        const ratio = Math.min(maxWidth / width, maxHeight / height, 1);
+        return {
+          width: width * ratio,
+          height: height * ratio
+        };
+      }
+
+      function addLogoToPdf(doc, x, y, maxWidth, maxHeight) {
+        if (!agencyLogoDataUrl) {
+          return null;
+        }
+
+        const imageType = agencyLogoDataUrl.includes("image/png") ? "PNG" : "JPEG";
+        try {
+          const image = doc.getImageProperties(agencyLogoDataUrl);
+          const size = containedImageSize(image.width, image.height, maxWidth, maxHeight);
+          doc.addImage(agencyLogoDataUrl, imageType, x, y, size.width, size.height, undefined, "FAST");
+          return size;
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function formatNarrativeHeader(line) {
+        return line
+          .replace(/^#{1,6}\s*/, "")
+          .replace(/^\*\*(.*)\*\*$/, "$1")
+          .replace(/:$/, "")
+          .trim();
+      }
+
+      function isNarrativeHeader(line, bodyLines) {
+        const clean = formatNarrativeHeader(line);
+        return Boolean(
+          bodyLines.length &&
+          clean.length <= 80 &&
+          (
+            /^#{1,6}\s+/.test(line) ||
+            /^\*\*.*\*\*$/.test(line.trim()) ||
+            /:$/.test(line.trim()) ||
+            /(summary|analysis|recommendation|performance|narrative|overview)/i.test(clean)
+          )
+        );
+      }
+
+      function isStandaloneNarrativeHeader(line) {
+        const clean = formatNarrativeHeader(line);
+        return Boolean(
+          clean.length <= 80 &&
+          (
+            /^#{1,6}\s+/.test(line) ||
+            /^\*\*.*\*\*$/.test(line.trim()) ||
+            /:$/.test(line.trim())
+          )
+        );
+      }
+
+      function getPdfNarrativeBlocks() {
+        const raw = latestNarrative || getNarrativeText();
+        return String(raw || "")
+          .split(/\n\s*\n/)
+          .map((block) => block.split(/\n/).map((line) => line.trim()).filter(Boolean))
+          .filter((lines) => lines.length)
+          .map((lines) => {
+            const bodyLines = lines.slice(1);
+            if (!bodyLines.length && isStandaloneNarrativeHeader(lines[0])) {
+              return { heading: formatNarrativeHeader(lines[0]) };
+            }
+
+            if (isNarrativeHeader(lines[0], bodyLines)) {
+              return {
+                heading: formatNarrativeHeader(lines[0]),
+                body: bodyLines.join(" ")
+              };
+            }
+
+            return { body: lines.join(" ") };
+          });
+      }
+
+      function drawPdfHeader(doc, margin, pageWidth) {
+        const logo = addLogoToPdf(doc, margin, margin, 126, 42);
+
+        if (!logo) {
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(13);
+          doc.setTextColor(17, 24, 39);
+          doc.text("NarrativeAI", margin, margin + 18);
+        }
+
+        doc.setTextColor(23, 32, 51);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(18);
+        doc.text("NarrativeAI Report", pageWidth - margin, margin + 14, { align: "right" });
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(9);
+        doc.setTextColor(102, 112, 133);
+        doc.text(`Generated ${reportDate()}`, pageWidth - margin, margin + 30, { align: "right" });
+
+        doc.setDrawColor(226, 232, 240);
+        doc.setLineWidth(0.75);
+        doc.line(margin, margin + 58, pageWidth - margin, margin + 58);
+
+        return margin + 86;
+      }
+
+      function drawPdfStats(doc, stats, margin, y, pageWidth) {
+        const gap = 12;
+        const boxWidth = (pageWidth - margin * 2 - gap * 2) / 3;
+        const boxHeight = 70;
+        const statColumns = [
+          ["Revenue", money(stats.total_revenue)],
+          ["Spend", money(stats.total_spend)],
+          ["ROAS", `${stats.avg_roas}x`],
+        ];
+
+        statColumns.forEach(([label, value], index) => {
+          const x = margin + index * (boxWidth + gap);
+          doc.setDrawColor(226, 232, 240);
+          doc.setFillColor(248, 250, 252);
+          doc.roundedRect(x, y, boxWidth, boxHeight, 6, 6, "FD");
+          doc.setTextColor(102, 112, 133);
+          doc.setFont("helvetica", "bold");
+          doc.setFontSize(9);
+          doc.text(label.toUpperCase(), x + 14, y + 22);
+          doc.setTextColor(23, 32, 51);
+          doc.setFontSize(17);
+          doc.text(String(value), x + 14, y + 48, { maxWidth: boxWidth - 28 });
+        });
+
+        return y + boxHeight + 34;
+      }
+
+      function downloadPdf() {
+        if (!currentReportData || !window.jspdf?.jsPDF) {
+          return;
+        }
+
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF({ unit: "pt", format: "letter" });
+        const margin = 36;
+        const pageWidth = doc.internal.pageSize.getWidth();
+        let y = drawPdfHeader(doc, margin, pageWidth);
+        const stats = currentReportData.stats;
+
+        y = drawPdfStats(doc, stats, margin, y, pageWidth);
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(14);
+        doc.setTextColor(23, 32, 51);
+        doc.text("Executive Narrative", margin, y);
+        y += 24;
+
+        const narrativeBlocks = getPdfNarrativeBlocks();
+        narrativeBlocks.forEach((block) => {
+          if (block.heading) {
+            doc.setFont("helvetica", "bold");
+            doc.setFontSize(12);
+            doc.setTextColor(23, 32, 51);
+            y = addWrappedText(doc, block.heading, margin, y, pageWidth - margin * 2, 18);
+            y += 4;
+          }
+
+          if (block.body) {
+            doc.setFont("helvetica", "normal");
+            doc.setFontSize(12);
+            doc.setTextColor(76, 90, 119);
+            y = addWrappedText(doc, block.body, margin, y, pageWidth - margin * 2, 18);
+            y += 14;
+          }
+        });
+
+        doc.save("NarrativeAI_Report.pdf");
+      }
+
       function setBusy(isBusy, message = "") {
         analyzeButton.disabled = isBusy;
         sampleButton.disabled = isBusy;
@@ -531,9 +912,20 @@
       function renderReport(data, sourceLabel = "Sample data loaded") {
         const stats = data.stats;
         const maxRevenue = Math.max(...data.daily_trends.map((day) => day.revenue), 1);
+        currentReportData = data;
         latestNarrative = data.narrative || "";
 
         report.innerHTML = `
+          <div class="report-branding">
+            <div class="report-logo-slot">
+              ${agencyLogoDataUrl ? `<img class="report-logo" src="${agencyLogoDataUrl}" alt="Agency logo">` : ""}
+            </div>
+            <div class="report-title">
+              <h2>Performance Report</h2>
+              <small>${escapeHtml(reportDate())}</small>
+            </div>
+          </div>
+
           <div class="report-source">${escapeHtml(sourceLabel)}</div>
 
           <div class="metrics">
@@ -578,7 +970,10 @@
           <section class="section">
             <div class="section-head">
               <h2>Narrative</h2>
-              <button class="copy-button" id="copy-narrative" type="button">Copy</button>
+              <div class="section-actions">
+                <button class="copy-button" id="copy-narrative" type="button">Copy</button>
+                <button class="copy-button pdf-button" id="download-pdf" type="button">Download PDF</button>
+              </div>
             </div>
             <div class="narrative" id="narrative-container">${renderNarrative(data.narrative)}</div>
           </section>
@@ -641,14 +1036,49 @@
       });
 
       sampleButton.addEventListener("click", loadSample);
+      logoInput.addEventListener("change", () => {
+        errorBox.textContent = "";
+        const logoFile = logoInput.files[0];
+        if (!logoFile) {
+          return;
+        }
+
+        if (!logoFile.type.match(/^image\/(png|jpeg)$/)) {
+          errorBox.textContent = "Upload a PNG or JPEG logo.";
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.addEventListener("load", () => {
+          agencyLogoDataUrl = reader.result;
+          localStorage.setItem(logoStorageKey, agencyLogoDataUrl);
+          updateLogoPreview();
+          if (currentReportData) {
+            renderReport(currentReportData, document.querySelector(".report-source")?.textContent || "Report loaded");
+          }
+        });
+        reader.readAsDataURL(logoFile);
+      });
+
       report.addEventListener("click", async (event) => {
         const copyButton = event.target.closest("#copy-narrative");
+        const pdfButton = event.target.closest("#download-pdf");
+
+        if (pdfButton) {
+          downloadPdf();
+          pdfButton.textContent = "Downloading...";
+          window.setTimeout(() => {
+            pdfButton.textContent = "Download PDF";
+          }, 1800);
+          return;
+        }
+
         if (!copyButton) {
           return;
         }
 
         try {
-          await copyToClipboard(latestNarrative);
+          await copyToClipboard(getNarrativeText());
           copyButton.textContent = "Copied!";
           window.setTimeout(() => {
             copyButton.textContent = "Copy";
@@ -660,6 +1090,7 @@
           }, 3200);
         }
       });
+      updateLogoPreview();
       loadSample();
     </script>
   </body>
