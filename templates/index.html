@@ -262,6 +262,37 @@
         line-height: 1.55;
       }
 
+      .narrative {
+        display: grid;
+        gap: 14px;
+      }
+
+      .narrative .mb-4 {
+        margin: 0;
+      }
+
+      .narrative .font-bold {
+        color: var(--text);
+        font-weight: 800;
+      }
+
+      .copy-button {
+        min-height: 34px;
+        padding: 0 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--text);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .copy-button:hover {
+        border-color: #b8c2d2;
+        background: #f8fafc;
+      }
+
       .chart {
         display: grid;
         gap: 12px;
@@ -410,6 +441,7 @@
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
       const statusBox = document.querySelector("#form-status");
+      let latestNarrative = "";
 
       const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
@@ -422,6 +454,64 @@
 
       function metric(label, value) {
         return `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`;
+      }
+
+      function cleanNarrativeTitle(line) {
+        return line.replace(/^\*\*(.*)\*\*$/, "$1").trim();
+      }
+
+      function renderNarrative(narrative) {
+        const chunks = String(narrative || "")
+          .split(/\n\s*\n/)
+          .map((chunk) => chunk.trim())
+          .filter(Boolean);
+
+        if (!chunks.length) {
+          return '<p class="mb-4">No narrative was returned.</p>';
+        }
+
+        return chunks.map((chunk, index) => {
+          if (index !== 0) {
+            return `<p class="mb-4">${escapeHtml(chunk)}</p>`;
+          }
+
+          const lines = chunk.split(/\n/);
+          const title = cleanNarrativeTitle(lines.shift() || "");
+          const body = lines.join("\n").trim();
+
+          if (!body) {
+            return `<p class="mb-4 font-bold">${escapeHtml(title)}</p>`;
+          }
+
+          return `
+            <p class="mb-4">
+              <span class="font-bold">${escapeHtml(title)}</span><br>
+              ${escapeHtml(body)}
+            </p>
+          `;
+        }).join("");
+      }
+
+      async function copyToClipboard(text) {
+        if (navigator.clipboard && window.isSecureContext) {
+          try {
+            await navigator.clipboard.writeText(text);
+            return;
+          } catch (error) {
+            // Fall through to the textarea copy path for browsers that block
+            // clipboard writes in automated or restricted contexts.
+          }
+        }
+
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
       }
 
       function setBusy(isBusy, message = "") {
@@ -441,6 +531,7 @@
       function renderReport(data, sourceLabel = "Sample data loaded") {
         const stats = data.stats;
         const maxRevenue = Math.max(...data.daily_trends.map((day) => day.revenue), 1);
+        latestNarrative = data.narrative || "";
 
         report.innerHTML = `
           <div class="report-source">${escapeHtml(sourceLabel)}</div>
@@ -487,9 +578,9 @@
           <section class="section">
             <div class="section-head">
               <h2>Narrative</h2>
-              <small>Draft summary</small>
+              <button class="copy-button" id="copy-narrative" type="button">Copy</button>
             </div>
-            <p class="narrative">${escapeHtml(data.narrative)}</p>
+            <div class="narrative" id="narrative-container">${renderNarrative(data.narrative)}</div>
           </section>
         `;
       }
@@ -550,6 +641,25 @@
       });
 
       sampleButton.addEventListener("click", loadSample);
+      report.addEventListener("click", async (event) => {
+        const copyButton = event.target.closest("#copy-narrative");
+        if (!copyButton) {
+          return;
+        }
+
+        try {
+          await copyToClipboard(latestNarrative);
+          copyButton.textContent = "Copied!";
+          window.setTimeout(() => {
+            copyButton.textContent = "Copy";
+          }, 3200);
+        } catch (error) {
+          copyButton.textContent = "Copy failed";
+          window.setTimeout(() => {
+            copyButton.textContent = "Copy";
+          }, 3200);
+        }
+      });
       loadSample();
     </script>
   </body>
