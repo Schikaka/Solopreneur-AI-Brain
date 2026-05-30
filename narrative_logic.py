@@ -1,1 +1,188 @@
-aW1wb3J0IHBhbmRhcyBhcyBwZAppbXBvcnQganNvbgppbXBvcnQgcmVxdWVzdHMKCmRlZiBnZXRfYWlfbmFycmF0aXZlKHN0YXRzKToKICAgIHVybCA9ICJodHRwczovL2ludGVncmF0aW9ucy5lbWVyZ2VudGFnZW50LmNvbS9sbG0vdjEvY2hhdC9jb21wbGV0aW9ucyIKICAgIGhlYWRlcnMgPSB7CiAgICAgICAgIkF1dGhvcml6YXRpb24iOiAiQmVhcmVyIHNrLWVtZXJnZW50LTdBYjBkMTQxYjFiRjJFMUNjOSIsCiAgICAgICAgIkNvbnRlbnQtVHlwZSI6ICJhcHBsaWNhdGlvbi9qc29uIgogICAgfQogICAgCiAgICBwcm9tcHQgPSBmIiIiCiAgICBZb3UgYXJlIGEgU2VuaW9yIE1hcmtldGluZyBBY2NvdW50IE1hbmFnZXIuIFdyaXRlIGEgMy1wYXJhZ3JhcGggcHJvZmVzc2lvbmFsIGV4ZWN1dGl2ZSBzdW1tYXJ5IGZvciBhIGNsaWVudCByZXBvcnQgYmFzZWQgb24gdGhlc2Ugc3RhdHM6CiAgICB7anNvbi5kdW1wcyhzdGF0cywgaW5kZW50PTIpfQogICAgCiAgICBQYXJhZ3JhcGggMTogT3ZlcmFsbCBwZXJmb3JtYW5jZSBvdmVydmlldyAoUmV2ZW51ZSB2cyBTcGVuZCkuCiAgICBQYXJhZ3JhcGggMjogU3BlY2lmaWMgY2FtcGFpZ24gcGVyZm9ybWFuY2UgKFRoZSB3aW5uZXIpLgogICAgUGFyYWdyYXBoIDM6IFJlY29tbWVuZGF0aW9ucyBmb3IgbmV4dCBtb250aC4KICAgIAogICAgS2VlcCB0aGUgdG9uZSBwcm9mZXNzaW9uYWwsIGNvbmZpZGVudCwgYW5kIGRhdGEtZHJpdmVuLgogICAgIiIiCiAgICAKICAgIGRhdGEgPSB7CiAgICAgICAgIm1vZGVsIjogImdwdC00by1taW5pIiwKICAgICAgICAibWVzc2FnZXMiOiBbeyJyb2xlIjogInVzZXIiLCAiY29udGVudCI6IHByb21wdH1dCiAgICB9CiAgICAKICAgIHRyeToKICAgICAgICByZXNwb25zZSA9IHJlcXVlc3RzLnBvc3QodXJsLCBoZWFkZXJzPWhlYWRlcnMsIGpzb249ZGF0YSkKICAgICAgICByZXR1cm4gcmVzcG9uc2UuanNvbigpWydjaG9pY2VzJ11bMF1bJ21lc3NhZ2UnXVsnY29udGVudCddCiAgICBleGNlcHQgRXhjZXB0aW9uIGFzIGU6CiAgICAgICAgcmV0dXJuIGYiRXJyb3IgZ2VuZXJhdGluZyBuYXJyYXRpdmU6IHtzdHIoZSl9IgoKZGVmIGFuYWx5emVfZGF0YShmaWxlX3BhdGgpOgogICAgZGYgPSBwZC5yZWFkX2NzdihmaWxlX3BhdGgpCiAgICAKICAgIHRvdGFsX3NwZW5kID0gZGZbJ1NwZW5kJ10uc3VtKCkKICAgIHRvdGFsX2NsaWNrcyA9IGRmWydDbGlja3MnXS5zdW0oKQogICAgdG90YWxfY29udmVyc2lvbnMgPSBkZlsnQ29udmVyc2lvbnMnXS5zdW0oKQogICAgdG90YWxfcmV2ZW51ZSA9IGRmWydSZXZlbnVlJ10uc3VtKCkKICAgIGF2Z19jdHIgPSAodG90YWxfY2xpY2tzIC8gZGZbJ0ltcHJlc3Npb25zJ10uc3VtKCkpICogMTAwCiAgICBhdmdfcm9hcyA9IHRvdGFsX3JldmVudWUgLyB0b3RhbF9zcGVuZAogICAgY2FtcGFpZ25fcGVyZm9ybWFuY2UgPSBkZi5ncm91cGJ5KCdDYW1wYWlnbicpWydSZXZlbnVlJ10uc3VtKCkuaWR4bWF4KCkKICAgIAogICAgc3RhdHMgPSB7CiAgICAgICAgInRvdGFsX3NwZW5kIjogcm91bmQoZmxvYXQodG90YWxfc3BlbmQpLCAyKSwKICAgICAgICAidG90YWxfY2xpY2tzIjogaW50KHRvdGFsX2NsaWNrcyksCiAgICAgICAgInRvdGFsX2NvbnZlcnNpb25zIjogaW50KHRvdGFsX2NvbnZlcnNpb25zKSwKICAgICAgICAidG90YWxfcmV2ZW51ZSI6IHJvdW5kKGZsb2F0KHRvdGFsX3JldmVudWUpLCAyKSwKICAgICAgICAiYXZnX2N0ciI6IGYie3JvdW5kKGZsb2F0KGF2Z19jdHIpLCAyKX0lIiwKICAgICAgICAiYXZnX3JvYXMiOiByb3VuZChmbG9hdChhdmdfcm9hcyksIDIpLAogICAgICAgICJ0b3BfY2FtcGFpZ24iOiBjYW1wYWlnbl9wZXJmb3JtYW5jZQogICAgfQogICAgCiAgICBuYXJyYXRpdmUgPSBnZXRfYWlfbmFycmF0aXZlKHN0YXRzKQogICAgCiAgICByZXR1cm4gewogICAgICAgICJzdGF0cyI6IHN0YXRzLAogICAgICAgICJuYXJyYXRpdmUiOiBuYXJyYXRpdmUKICAgIH0KCmlmIF9fbmFtZV9fID09ICJfX21haW5fXyI6CiAgICByZXN1bHQgPSBhbmFseXplX2RhdGEoJ2R1bW15X21hcmtldGluZ19kYXRhLmNzdicpCiAgICBwcmludChqc29uLmR1bXAocmVzdWx0LCBpbmRlbnQ9MikpCg==
+import base64
+import io
+import json
+
+import pandas as pd
+import requests
+
+
+REQUIRED_MARKETING_COLUMNS = {
+    "Date",
+    "Campaign",
+    "Spend",
+    "Clicks",
+    "Impressions",
+    "Conversions",
+    "Revenue",
+}
+
+
+def read_marketing_csv(file_path):
+    df = pd.read_csv(file_path)
+
+    if REQUIRED_MARKETING_COLUMNS.issubset(df.columns):
+        return df
+
+    # Some uploaded project files were saved as base64 text. Fall back to
+    # decoding that format so the existing sample CSV still works.
+    with open(file_path, "r", encoding="utf-8") as file:
+        decoded_csv = base64.b64decode(file.read()).decode("utf-8")
+
+    decoded_df = pd.read_csv(io.StringIO(decoded_csv))
+    if not REQUIRED_MARKETING_COLUMNS.issubset(decoded_df.columns):
+        missing_columns = REQUIRED_MARKETING_COLUMNS.difference(decoded_df.columns)
+        raise ValueError(f"CSV is missing required columns: {sorted(missing_columns)}")
+
+    return decoded_df
+
+
+def get_ai_narrative(stats):
+    url = "https://integrations.emergentagent.com/llm/v1/chat/completions"
+    headers = {
+        "Authorization": "Bearer sk-emergent-7Ab0d141b1bF2E1Cc9",
+        "Content-Type": "application/json",
+    }
+
+    prompt = f"""
+    You are a Senior Marketing Account Manager. Write a 3-paragraph professional executive summary for a client report based on these stats:
+    {json.dumps(stats, indent=2)}
+
+    Paragraph 1: Overall performance overview (Revenue vs Spend).
+    Paragraph 2: Specific campaign performance (The winner).
+    Paragraph 3: Recommendations for next month.
+
+    Keep the tone professional, confident, and data-driven.
+    """
+
+    data = {
+        "model": "gpt-4o-mini",
+        "messages": [{"role": "user", "content": prompt}],
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=data)
+        return response.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"Error generating narrative: {str(e)}"
+
+
+def get_top_3_insights(file_path):
+    df = read_marketing_csv(file_path)
+
+    daily = (
+        df.groupby("Date", as_index=False)
+        .agg(
+            {
+                "Spend": "sum",
+                "Clicks": "sum",
+                "Impressions": "sum",
+                "Conversions": "sum",
+                "Revenue": "sum",
+            }
+        )
+        .sort_values("Date")
+    )
+
+    spend = daily["Spend"].where(daily["Spend"] != 0)
+    clicks = daily["Clicks"].where(daily["Clicks"] != 0)
+    impressions = daily["Impressions"].where(daily["Impressions"] != 0)
+
+    daily["roi"] = (((daily["Revenue"] - daily["Spend"]) / spend) * 100).fillna(0)
+    daily["roas"] = (daily["Revenue"] / spend).fillna(0)
+    daily["ctr"] = ((daily["Clicks"] / impressions) * 100).fillna(0)
+    daily["conversion_rate"] = ((daily["Conversions"] / clicks) * 100).fillna(0)
+
+    insight_metrics = [
+        {
+            "key": "highest_roi",
+            "column": "roi",
+            "label": "ROI",
+            "formatter": lambda value: f"{value:.2f}%",
+        },
+        {
+            "key": "highest_revenue",
+            "column": "Revenue",
+            "label": "revenue",
+            "formatter": lambda value: f"${value:,.2f}",
+        },
+        {
+            "key": "highest_conversions",
+            "column": "Conversions",
+            "label": "conversions",
+            "formatter": lambda value: f"{int(value):,}",
+        },
+        {
+            "key": "highest_ctr",
+            "column": "ctr",
+            "label": "CTR",
+            "formatter": lambda value: f"{value:.2f}%",
+        },
+        {
+            "key": "highest_conversion_rate",
+            "column": "conversion_rate",
+            "label": "conversion rate",
+            "formatter": lambda value: f"{value:.2f}%",
+        },
+    ]
+
+    insights = []
+    for metric in insight_metrics:
+        column = metric["column"]
+        row = daily.loc[daily[column].idxmax()]
+        value = float(row[column])
+        average = float(daily[column].mean())
+        lift_pct = ((value - average) / abs(average) * 100) if average else 0
+
+        insights.append(
+            {
+                "type": metric["key"],
+                "date": str(row["Date"]),
+                "metric": metric["label"],
+                "value": metric["formatter"](value),
+                "daily_average": metric["formatter"](average),
+                "lift_vs_average": f"{lift_pct:.2f}%",
+                "significance_score": round(float(lift_pct), 2),
+                "summary": (
+                    f"{row['Date']} had the highest {metric['label']} at "
+                    f"{metric['formatter'](value)}, {lift_pct:.2f}% above the "
+                    "daily average."
+                ),
+            }
+        )
+
+    return sorted(insights, key=lambda item: item["significance_score"], reverse=True)[:3]
+
+
+def analyze_data(file_path):
+    df = read_marketing_csv(file_path)
+
+    total_spend = df["Spend"].sum()
+    total_clicks = df["Clicks"].sum()
+    total_conversions = df["Conversions"].sum()
+    total_revenue = df["Revenue"].sum()
+    avg_ctr = (total_clicks / df["Impressions"].sum()) * 100
+    avg_roas = total_revenue / total_spend
+    campaign_performance = df.groupby("Campaign")["Revenue"].sum().idxmax()
+
+    stats = {
+        "total_spend": round(float(total_spend), 2),
+        "total_clicks": int(total_clicks),
+        "total_conversions": int(total_conversions),
+        "total_revenue": round(float(total_revenue), 2),
+        "avg_ctr": f"{round(float(avg_ctr), 2)}%",
+        "avg_roas": round(float(avg_roas), 2),
+        "top_campaign": campaign_performance,
+    }
+
+    narrative = get_ai_narrative(stats)
+
+    return {
+        "stats": stats,
+        "top_insights": get_top_3_insights(file_path),
+        "narrative": narrative,
+    }
+
+
+if __name__ == "__main__":
+    result = analyze_data("dummy_marketing_data.csv")
+    print(json.dumps(result, indent=2))
