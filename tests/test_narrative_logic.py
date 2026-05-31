@@ -8,6 +8,7 @@ from narrative_logic import analyze_data, get_top_3_insights, read_marketing_csv
 
 def test_analyze_data_returns_expected_sample_stats():
     result = analyze_data("dummy_marketing_data.csv")
+    narrative = result["narrative"].lower()
 
     assert result["stats"]["total_spend"] == 2980.0
     assert result["stats"]["total_revenue"] == 13650.0
@@ -15,6 +16,16 @@ def test_analyze_data_returns_expected_sample_stats():
     assert result["stats"]["top_campaign"] == "Summer Sale Search"
     assert len(result["insights"]) == 3
     assert len(result["daily_trends"]) == 4
+    assert "executive cmo brief" in narrative
+    assert "execution efficiency" in narrative
+    assert "campaign momentum" in narrative
+    assert "optimization pathways" in narrative
+    assert "strategic recommendations" in narrative
+    assert "deployed capital" in narrative
+    assert "secured return" in narrative
+    assert "gatekeeper" not in narrative
+    assert "license" not in narrative
+    assert "api key" not in narrative
 
 
 def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):

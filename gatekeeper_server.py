@@ -38,6 +38,31 @@ load_dotenv()
 OPENAI_TIMEOUT_SECONDS = 5
 GATEKEEPER_LIMIT = "5 per minute"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+CMO_PILLARS = ("Execution Efficiency", "Campaign Momentum", "Optimization Pathways")
+STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
+FORBIDDEN_NARRATIVE_TERMS = (
+    "gatekeeper",
+    "license",
+    "licence",
+    "api key",
+    "api keys",
+    "openai",
+    "circuit breaker",
+    "live generator",
+    "upstream model",
+)
+ELITE_CMO_SYSTEM_PROMPT = """
+You are a Senior CMO reporting to an executive agency client.
+Your voice is confident, boardroom-ready, solution-oriented, and commercially precise.
+
+Non-negotiable narrative rules:
+- Never mention Gatekeeper, License, API keys, model providers, infrastructure, fallback behavior, or internal implementation details.
+- Use Achievement-Based Framing: describe spend as "deployed capital" and revenue as "secured return".
+- Use the Rule of Three: organize the report around exactly three strategic pillars: Execution Efficiency, Campaign Momentum, and Optimization Pathways.
+- Use PAS (Problem-Agitate-Solution) when performance dips or weak efficiency signals appear, while keeping the tone executive and constructive.
+- End with a dedicated Strategic Recommendations section containing exactly three numbered recommendations.
+- Make the output immediately copy-pasteable for a client-facing boardroom report.
+""".strip()
 MARKETING_STATS_KEYS = {
     "total_revenue",
     "total_spend",
@@ -345,19 +370,118 @@ def _format_money(value):
     return f"${float(value):,.2f}"
 
 
-def _stable_fallback_report(stats, reason="circuit_open"):
-    top_campaign = stats.get("top_campaign", "the leading campaign")
-    narrative = (
-        "**Stable Fallback Report**\n"
-        f"NarrativeAI produced a deterministic report because the live generator is currently protected by "
-        f"the circuit breaker ({reason}). Revenue was {_format_money(stats.get('total_revenue', 0))} from "
-        f"{_format_money(stats.get('total_spend', 0))} in spend, with an average ROAS of "
-        f"{stats.get('avg_roas', 0)}x and {stats.get('total_conversions', 0)} conversions.\n\n"
-        f"The strongest campaign was {top_campaign}. Keep monitoring spend efficiency and conversion quality "
-        "while the upstream model service recovers."
+def _safe_float(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
+def _contains_forbidden_narrative_terms(text):
+    lowered = str(text or "").lower()
+    return any(term in lowered for term in FORBIDDEN_NARRATIVE_TERMS)
+
+
+def _safe_campaign_name(value):
+    text = str(value or "").strip()
+    if not text or _contains_forbidden_narrative_terms(text):
+        return "the leading campaign"
+    return text
+
+
+def _sanitized_stats_for_narrative(stats):
+    sanitized = dict(stats or {})
+    sanitized["top_campaign"] = _safe_campaign_name(sanitized.get("top_campaign"))
+    return sanitized
+
+
+def _has_required_cmo_sections(text):
+    lowered = str(text or "").lower()
+    required_sections = ("Executive CMO Brief", *CMO_PILLARS, STRATEGIC_RECOMMENDATIONS_HEADER)
+    return all(section.lower() in lowered for section in required_sections)
+
+
+def _elite_cmo_narrative(stats):
+    sanitized = _sanitized_stats_for_narrative(stats)
+    total_revenue = _safe_float(sanitized.get("total_revenue"))
+    total_spend = _safe_float(sanitized.get("total_spend"))
+    avg_roas = _safe_float(sanitized.get("avg_roas"))
+    total_conversions = _safe_int(sanitized.get("total_conversions"))
+    top_campaign = sanitized["top_campaign"]
+
+    efficiency_posture = (
+        "The account is converting capital with strong discipline"
+        if avg_roas >= 3
+        else "The account has a clear efficiency gap to close"
     )
+    optimization_path = (
+        "The immediate priority is to scale the proven pattern without diluting return quality."
+        if avg_roas >= 3
+        else (
+            "The core problem is return density: current efficiency leaves too little margin for broad scaling. "
+            "If this pattern is expanded unchanged, deployed capital can lose momentum quickly. "
+            "The solution is tighter audience, creative, and placement governance before budget increases."
+        )
+    )
+
+    return (
+        "**Executive CMO Brief**\n"
+        f"The portfolio generated {_format_money(total_revenue)} in secured return from "
+        f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x ROAS profile "
+        f"and {total_conversions:,} conversions. Momentum is anchored by {top_campaign}, giving leadership "
+        "a clear signal for where disciplined scaling should begin.\n\n"
+        "**Execution Efficiency**\n"
+        f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x. "
+        "This creates a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
+        "**Campaign Momentum**\n"
+        f"{top_campaign} is the primary momentum driver and should be treated as the current proof point for "
+        "message-market fit. The strategic objective is to preserve its signal quality while extending learnings "
+        "into adjacent audiences and creative angles.\n\n"
+        "**Optimization Pathways**\n"
+        f"{optimization_path} The operating focus should be sharper allocation, cleaner conversion paths, "
+        "and faster feedback loops between spend, revenue, and campaign-level response.\n\n"
+        "**Strategic Recommendations**\n"
+        f"1. Reallocate incremental deployed capital toward {top_campaign} and closely related high-intent segments.\n"
+        "2. Protect secured return by tightening review of underperforming audiences, placements, and creative before scaling.\n"
+        "3. Establish a weekly executive scorecard around secured return, ROAS, conversions, and campaign momentum."
+    )
+
+
+def _build_cmo_messages(stats):
+    sanitized_stats = _sanitized_stats_for_narrative(stats)
+    output_contract = (
+        "Create a professional client-ready report using only these marketing statistics:\n"
+        f"{json.dumps(sanitized_stats, sort_keys=True)}\n\n"
+        "Return plain markdown with exactly this structure:\n"
+        "**Executive CMO Brief**\n"
+        "One concise opening paragraph using the phrases deployed capital and secured return.\n\n"
+        "**Execution Efficiency**\n"
+        "One concise paragraph on capital efficiency and ROAS.\n\n"
+        "**Campaign Momentum**\n"
+        "One concise paragraph on the strongest campaign or momentum driver.\n\n"
+        "**Optimization Pathways**\n"
+        "One concise paragraph. Use PAS if any performance signal is weak or declining.\n\n"
+        "**Strategic Recommendations**\n"
+        "1. First executive recommendation.\n"
+        "2. Second executive recommendation.\n"
+        "3. Third executive recommendation."
+    )
+    return [
+        {"role": "system", "content": ELITE_CMO_SYSTEM_PROMPT},
+        {"role": "user", "content": output_contract},
+    ]
+
+
+def _stable_fallback_report(stats, reason="circuit_open"):
     return {
-        "narrative": narrative,
+        "narrative": _elite_cmo_narrative(stats),
         "source": "stable_fallback",
         "circuit_state": "open",
         "token_usage": DEFAULT_TOKEN_USAGE,
@@ -370,16 +494,7 @@ def _stable_fallback_report(stats, reason="circuit_open"):
 
 
 def _fallback_narrative(stats):
-    return (
-        "**Executive Summary**\n"
-        f"Gatekeeper verified the license and analyzed {_format_money(stats['total_revenue'])} "
-        f"in revenue from {_format_money(stats['total_spend'])} in spend. Average ROAS was "
-        f"{stats['avg_roas']}x, with {stats['total_conversions']} conversions led by "
-        f"{stats['top_campaign']}.\n\n"
-        "The OpenAI API key is not configured on this Gatekeeper instance yet, so this "
-        "deterministic narrative confirms the secure split is working without exposing "
-        "any private key to the local client."
-    )
+    return _elite_cmo_narrative(stats)
 
 
 class CircuitOpenError(RuntimeError):
@@ -647,22 +762,23 @@ def generate_narrative_result(stats):
         IDEMPOTENT_CACHE.set(cache_key, fallback)
         return fallback
 
-    prompt = (
-        "You are a Senior Marketing Account Manager. Write a 3-paragraph "
-        "professional executive summary based only on these marketing stats: "
-        f"{json.dumps(stats, sort_keys=True)}"
-    )
     body = {
         "model": os.getenv("OPENAI_MODEL", os.getenv("EMERGENT_LLM_MODEL", "gpt-4o-mini")),
-        "messages": [{"role": "user", "content": prompt}],
+        "messages": _build_cmo_messages(stats),
     }
 
     try:
         response_json = _call_openai_with_breaker(body, purpose="narrative_generation")
         token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
+        narrative = str(response_json["choices"][0]["message"]["content"]).strip()
+        source = "openai"
+        if _contains_forbidden_narrative_terms(narrative) or not _has_required_cmo_sections(narrative):
+            log_event(logging.WARNING, "openai_generation_contract_fallback")
+            narrative = _elite_cmo_narrative(stats)
+            source = "contract_fallback"
         result = {
-            "narrative": response_json["choices"][0]["message"]["content"],
-            "source": "openai",
+            "narrative": narrative,
+            "source": source,
             "circuit_state": "closed",
             "token_usage": token_usage,
             "rag_triage": {

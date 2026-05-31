@@ -641,14 +641,17 @@
           return '<p class="mb-4">No narrative was returned.</p>';
         }
 
-        return chunks.map((chunk, index) => {
-          if (index !== 0) {
-            return `<p class="mb-4">${escapeHtml(chunk)}</p>`;
+        return chunks.map((chunk) => {
+          const lines = chunk.split(/\n/);
+          const firstLine = lines.shift() || "";
+          const bodyLines = lines.map((line) => line.trim()).filter(Boolean);
+
+          if (!isNarrativeHeader(firstLine, bodyLines) && !isStandaloneNarrativeHeader(firstLine)) {
+            return `<p class="mb-4">${escapeHtml(chunk).replace(/\n/g, "<br>")}</p>`;
           }
 
-          const lines = chunk.split(/\n/);
-          const title = cleanNarrativeTitle(lines.shift() || "");
-          const body = lines.join("\n").trim();
+          const title = cleanNarrativeTitle(formatNarrativeHeader(firstLine));
+          const body = bodyLines.join("\n").trim();
 
           if (!body) {
             return `<p class="mb-4 font-bold">${escapeHtml(title)}</p>`;
@@ -657,7 +660,7 @@
           return `
             <p class="mb-4">
               <span class="font-bold">${escapeHtml(title)}</span><br>
-              ${escapeHtml(body)}
+              ${escapeHtml(body).replace(/\n/g, "<br>")}
             </p>
           `;
         }).join("");
@@ -747,7 +750,7 @@
             /^#{1,6}\s+/.test(line) ||
             /^\*\*.*\*\*$/.test(line.trim()) ||
             /:$/.test(line.trim()) ||
-            /(summary|analysis|recommendation|performance|narrative|overview)/i.test(clean)
+            /(summary|analysis|recommendation|performance|narrative|overview|efficiency|momentum|pathway)/i.test(clean)
           )
         );
       }

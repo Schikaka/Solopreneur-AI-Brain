@@ -5,6 +5,9 @@ from gatekeeper_server import IdempotentCache, SimpleCircuitBreaker, create_app,
 from security_tokens import authorization_header, gatekeeper_payload, payload_hash
 
 
+FORBIDDEN_CLIENT_TERMS = ("gatekeeper", "license", "licence", "api key", "openai", "circuit breaker", "upstream model")
+
+
 @pytest.fixture(autouse=True)
 def secure_gatekeeper_env(monkeypatch, tmp_path):
     monkeypatch.setenv("APP_ENV", "testing")
@@ -34,6 +37,18 @@ def signed_headers_for_payload(payload, remote_ip=None):
 def post_signed(client, license_key, stats=None):
     payload = gatekeeper_payload(stats if stats is not None else {}, license_key)
     return client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
+
+
+def assert_boardroom_narrative(narrative):
+    lowered = narrative.lower()
+    assert "executive cmo brief" in lowered
+    assert "execution efficiency" in lowered
+    assert "campaign momentum" in lowered
+    assert "optimization pathways" in lowered
+    assert "strategic recommendations" in lowered
+    assert "deployed capital" in lowered
+    assert "secured return" in lowered
+    assert not any(term in lowered for term in FORBIDDEN_CLIENT_TERMS)
 
 
 def test_gatekeeper_rejects_invalid_license():
@@ -100,7 +115,7 @@ def test_gatekeeper_valid_license_returns_narrative_without_local_key(monkeypatc
 
     assert response.status_code == 200
     assert "narrative" in payload
-    assert "Gatekeeper verified" in payload["narrative"]
+    assert_boardroom_narrative(payload["narrative"])
     assert payload["source"] == "deterministic_fallback"
     assert payload["token_usage"]["total_tokens"] == 0
 
@@ -163,10 +178,96 @@ def test_openai_circuit_breaker_returns_stable_fallback(monkeypatch):
     third = generate_narrative_result(stats)
 
     assert first["source"] == "stable_fallback"
-    assert "Stable Fallback Report" in first["narrative"]
+    assert_boardroom_narrative(first["narrative"])
     assert second["source"] == "idempotent_cache"
     assert third["source"] == "idempotent_cache"
     assert third["circuit_state"] == "open"
+
+
+def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
+    monkeypatch.setattr(gatekeeper_server, "IDEMPOTENT_CACHE", IdempotentCache())
+    captured = {}
+    narrative = (
+        "**Executive CMO Brief**\n"
+        "The portfolio secured $1,000.00 in secured return from $250.00 in deployed capital.\n\n"
+        "**Execution Efficiency**\n"
+        "Capital efficiency is strong at 4.00x ROAS.\n\n"
+        "**Campaign Momentum**\n"
+        "Search is the clear momentum driver.\n\n"
+        "**Optimization Pathways**\n"
+        "The next step is disciplined scale.\n\n"
+        "**Strategic Recommendations**\n"
+        "1. Scale the strongest segment.\n"
+        "2. Protect return quality.\n"
+        "3. Review momentum weekly."
+    )
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": narrative}}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 34, "total_tokens": 46},
+            }
+
+    def post(url, headers, json, timeout):
+        captured["body"] = json
+        return Response()
+
+    monkeypatch.setattr("gatekeeper_server.requests.post", post)
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    result = generate_narrative_result(stats)
+    system_prompt = captured["body"]["messages"][0]["content"]
+    user_prompt = captured["body"]["messages"][1]["content"]
+
+    assert result["source"] == "openai"
+    assert_boardroom_narrative(result["narrative"])
+    assert "Senior CMO" in system_prompt
+    assert "Achievement-Based Framing" in system_prompt
+    assert "Rule of Three" in system_prompt
+    assert "PAS" in system_prompt
+    assert "Strategic Recommendations" in user_prompt
+
+
+def test_openai_generation_falls_back_when_contract_is_broken(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
+    monkeypatch.setattr(gatekeeper_server, "IDEMPOTENT_CACHE", IdempotentCache())
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": "Gatekeeper draft summary using an API key."}}],
+                "usage": {"prompt_tokens": 12, "completion_tokens": 6, "total_tokens": 18},
+            }
+
+    monkeypatch.setattr("gatekeeper_server.requests.post", lambda *args, **kwargs: Response())
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    result = generate_narrative_result(stats)
+
+    assert result["source"] == "contract_fallback"
+    assert_boardroom_narrative(result["narrative"])
 
 
 def test_gatekeeper_logs_json_generation_metadata(capsys):
