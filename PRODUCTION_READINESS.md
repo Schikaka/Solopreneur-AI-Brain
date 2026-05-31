@@ -17,12 +17,21 @@ environment secrets are configured.
 - Frontend escapes dynamic API strings before inserting report HTML.
 - Desktop and mobile browser smoke checks pass.
 - Unit and route tests pass.
+- Gatekeeper calls are protected with short-lived signed JWTs and a payload hash.
+- License validation reads from an encrypted SQLCipher-backed `database.db`
+  when `pysqlcipher3` is installed.
+- Gatekeeper report generation is rate limited to 5 requests per minute per IP.
+- Client pages receive nonce-based CSP headers for script execution.
 
 ## Required Environment
 
 - `APP_ENV=production`
 - `SECRET_KEY`
+- `DATABASE_ENCRYPTION_KEY`
+- `GATEKEEPER_JWT_SECRET`
 - `EMERGENT_LLM_KEY`
+- `LICENSE_DB_PATH`
+- `LICENSE_SEED_KEYS`
 - `PORT`
 - `MAX_UPLOAD_MB`
 
@@ -40,11 +49,11 @@ curl http://127.0.0.1:5050/api/sample
 ## Rollback
 
 Revert the production-readiness commit or redeploy the previous main-branch
-commit. No database migration or persistent data migration is involved.
+commit. Rotate `DATABASE_ENCRYPTION_KEY` only with a planned database
+re-encryption or rebuild from trusted license seed material.
 
 ## Follow-Up
 
-- Add real authentication before storing user history or customer reports.
 - Add persistent observability if deploying beyond a single small instance.
 - Replace the deterministic fallback with a visible "AI key missing" admin
   status if non-technical customers will operate the app.

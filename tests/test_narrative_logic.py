@@ -29,9 +29,10 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
         def json(self):
             return {"narrative": "Narrative from gatekeeper"}
 
-    def post(url, json, timeout):
+    def post(url, json, headers, timeout):
         captured["url"] = url
         captured["payload"] = json
+        captured["headers"] = headers
         captured["timeout"] = timeout
         return Response()
 
@@ -43,6 +44,8 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert captured["url"] == "http://gatekeeper.test/verify-and-generate"
     assert captured["payload"]["license_key"] == "DEMO123"
     assert captured["payload"]["stats"]["total_revenue"] == 13650.0
+    assert captured["headers"]["Authorization"].startswith("Bearer ")
+    assert len(captured["headers"]["X-Payload-SHA256"]) == 64
     assert result["narrative"] == "Narrative from gatekeeper"
 
 

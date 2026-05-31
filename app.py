@@ -2,8 +2,9 @@ import os
 import uuid
 from hashlib import sha256
 from pathlib import Path
+from secrets import token_urlsafe
 
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, g, jsonify, render_template, request
 from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
@@ -45,6 +46,33 @@ def create_app(test_config=None):
 
     Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
     sample_report_cache = {}
+
+    @app.before_request
+    def create_csp_nonce():
+        g.csp_nonce = token_urlsafe(16)
+
+    @app.context_processor
+    def inject_security_context():
+        return {"csp_nonce": getattr(g, "csp_nonce", "")}
+
+    @app.after_request
+    def add_security_headers(response):
+        nonce = getattr(g, "csp_nonce", "")
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            f"script-src 'self' 'nonce-{nonce}' https://cdn.tailwindcss.com https://cdnjs.cloudflare.com; "
+            "script-src-attr 'none'; "
+            "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
+            "font-src 'self' https://fonts.gstatic.com data:; "
+            "img-src 'self' data:; "
+            "connect-src 'self'; "
+            "object-src 'none'; "
+            "base-uri 'self'; "
+            "frame-ancestors 'none'"
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        return response
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_large_upload(error):

@@ -559,8 +559,8 @@
       </div>
     </main>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script>
+    <script nonce="{{ csp_nonce }}" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script nonce="{{ csp_nonce }}">
       const report = document.querySelector("#report");
       const form = document.querySelector("#upload-form");
       const analyzeButton = document.querySelector("#analyze-button");

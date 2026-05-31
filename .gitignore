@@ -1,4 +1,7 @@
 .env
+database.db
+database.db-shm
+database.db-wal
 .pytest_cache/
 __pycache__/
 *.py[cod]

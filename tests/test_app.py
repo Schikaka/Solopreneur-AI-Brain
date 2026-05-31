@@ -22,9 +22,11 @@ def fake_gatekeeper(monkeypatch):
         def json(self):
             return {"narrative": "Gatekeeper narrative"}
 
-    def post(url, json, timeout):
+    def post(url, json, headers, timeout):
         assert url.endswith("/verify-and-generate")
         assert json["license_key"]
+        assert headers["Authorization"].startswith("Bearer ")
+        assert len(headers["X-Payload-SHA256"]) == 64
         return Response()
 
     monkeypatch.setattr("narrative_logic.requests.post", post)
@@ -42,6 +44,18 @@ def test_admin_page(client):
 
     assert response.status_code == 200
     assert b"Workspace Admin" in response.data
+
+
+def test_index_has_nonce_csp(client):
+    response = client.get("/")
+    csp = response.headers["Content-Security-Policy"]
+
+    assert response.status_code == 200
+    assert "script-src" in csp
+    assert "'nonce-" in csp
+    assert "https://cdn.tailwindcss.com" in csp
+    assert "https://cdnjs.cloudflare.com" in csp
+    assert b'<script nonce="' in response.data
 
 
 def test_sample_report(client):

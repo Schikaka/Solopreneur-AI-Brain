@@ -1,15 +1,28 @@
 import json
+import hmac
 import os
+import time
 
 import requests
 from dotenv import load_dotenv
 from flask import Flask, jsonify, render_template_string, request
 
+from license_store import LicenseStore
+from security_tokens import TokenError, gatekeeper_payload, payload_hash, verify_gatekeeper_jwt
+
+
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+except ImportError:  # pragma: no cover - local fallback is covered in tests.
+    Limiter = None
+    get_remote_address = None
+
 
 load_dotenv()
 
-VALID_LICENSE_KEYS = {"DEMO123", "TEST456"}
 OPENAI_TIMEOUT_SECONDS = 30
+GATEKEEPER_LIMIT = "5 per minute"
 GATEKEEPER_PAGE = """
 <!doctype html>
 <html lang="en">
@@ -136,13 +149,13 @@ GATEKEEPER_PAGE = """
     <main>
       <div class="status"><span class="dot" aria-hidden="true"></span>Gatekeeper Online</div>
       <h1>NarrativeAI Gatekeeper</h1>
-      <p>This server verifies license keys and generates narratives without exposing the API key to the local client.</p>
+      <p>This server verifies encrypted license records and generates narratives without exposing the API key to the local client.</p>
       <form id="gatekeeper-form">
         <label for="license-key">Test License Key</label>
         <input id="license-key" value="DEMO123" autocomplete="off" spellcheck="false">
         <button type="submit">Verify And Generate</button>
       </form>
-      <pre id="result">Ready. Try DEMO123 or TEST456.</pre>
+      <pre id="result">Protected endpoint ready. Signed app requests only.</pre>
     </main>
     <script>
       const form = document.querySelector("#gatekeeper-form");
@@ -150,28 +163,7 @@ GATEKEEPER_PAGE = """
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         result.className = "";
-        result.textContent = "Checking license...";
-        const response = await fetch("/verify-and-generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            license_key: document.querySelector("#license-key").value.trim(),
-            stats: {
-              total_revenue: 13650,
-              total_spend: 2980,
-              avg_roas: 4.58,
-              total_conversions: 252,
-              top_campaign: "Summer Sale Search"
-            }
-          })
-        });
-        const payload = await response.json();
-        if (!response.ok) {
-          result.className = "error";
-          result.textContent = payload.error || "Gatekeeper request failed.";
-          return;
-        }
-        result.textContent = payload.narrative;
+        result.textContent = "The generator endpoint now only accepts signed client requests from NarrativeAI.";
       });
     </script>
   </body>
@@ -184,6 +176,75 @@ def _env_int(name, default):
         return int(os.getenv(name, default))
     except (TypeError, ValueError):
         return int(default)
+
+
+def _rate_limit_count():
+    return _env_int("GATEKEEPER_REPORTS_PER_MINUTE", 5)
+
+
+def _extract_client_ip():
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",", 1)[0].strip()
+    return request.remote_addr or "unknown"
+
+
+def _configure_rate_limiting(app):
+    if Limiter is not None:
+        return Limiter(
+            key_func=get_remote_address,
+            app=app,
+            storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+            default_limits=[],
+            headers_enabled=True,
+        )
+
+    request_log = {}
+    window_seconds = 60
+
+    @app.before_request
+    def fallback_rate_limit():
+        if request.endpoint != "verify_and_generate":
+            return None
+
+        now = time.monotonic()
+        key = (_extract_client_ip(), request.endpoint)
+        recent_hits = [hit for hit in request_log.get(key, []) if now - hit < window_seconds]
+        if len(recent_hits) >= _rate_limit_count():
+            request_log[key] = recent_hits
+            return jsonify({"error": "Too many report requests. Try again later."}), 429
+
+        recent_hits.append(now)
+        request_log[key] = recent_hits
+        return None
+
+    return None
+
+
+def _rate_limit(limiter):
+    if limiter is None:
+        return lambda view: view
+    return limiter.limit(os.getenv("GATEKEEPER_REPORT_LIMIT", GATEKEEPER_LIMIT))
+
+
+def _bearer_token():
+    authorization = request.headers.get("Authorization", "")
+    if not authorization.startswith("Bearer "):
+        return ""
+    return authorization.split(" ", 1)[1].strip()
+
+
+def _verify_signed_payload(payload):
+    token = _bearer_token()
+    if not token:
+        raise TokenError("Missing bearer token.")
+
+    expected_hash = payload_hash(payload)
+    supplied_hash = request.headers.get("X-Payload-SHA256", "")
+    if not hmac.compare_digest(supplied_hash, expected_hash):
+        raise TokenError("Payload hash header mismatch.")
+
+    return verify_gatekeeper_jwt(token, payload)
 
 
 def _format_money(value):
@@ -234,6 +295,12 @@ def generate_narrative(stats):
 
 def create_app():
     app = Flask(__name__)
+    limiter = _configure_rate_limiting(app)
+    license_store = LicenseStore()
+
+    @app.errorhandler(429)
+    def handle_rate_limit(error):
+        return jsonify({"error": "Too many report requests. Try again later."}), 429
 
     @app.get("/")
     def index():
@@ -244,12 +311,19 @@ def create_app():
         return jsonify({"status": "ok", "service": "gatekeeper"})
 
     @app.post("/verify-and-generate")
+    @_rate_limit(limiter)
     def verify_and_generate():
         payload = request.get_json(silent=True) or {}
         stats = payload.get("stats")
         license_key = str(payload.get("license_key", "")).strip()
+        signed_payload = gatekeeper_payload(stats, license_key)
 
-        if license_key not in VALID_LICENSE_KEYS:
+        try:
+            _verify_signed_payload(signed_payload)
+        except TokenError as exc:
+            return jsonify({"error": str(exc)}), 401
+
+        if not license_store.is_valid(license_key):
             return jsonify({"error": "Invalid license key."}), 403
 
         if not isinstance(stats, dict):

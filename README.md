@@ -39,9 +39,17 @@ Set these environment variables before deploying:
 
 - `APP_ENV=production`
 - `SECRET_KEY`
+- `DATABASE_ENCRYPTION_KEY`
+- `GATEKEEPER_JWT_SECRET`
 - `EMERGENT_LLM_KEY`
+- `LICENSE_DB_PATH`
+- `LICENSE_SEED_KEYS`
 - `PORT`
 - `MAX_UPLOAD_MB`
+
+The Gatekeeper stores license hashes in `database.db` through SQLCipher when
+`pysqlcipher3` is installed. Production deployments should set
+`SQLCIPHER_REQUIRED=1` and use a long random `DATABASE_ENCRYPTION_KEY`.
 
 ## Checks
 

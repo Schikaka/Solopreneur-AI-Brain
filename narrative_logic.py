@@ -8,6 +8,8 @@ import pandas as pd
 import requests
 from dotenv import load_dotenv
 
+from security_tokens import authorization_header, gatekeeper_payload, payload_hash
+
 
 load_dotenv()
 
@@ -102,15 +104,16 @@ def read_marketing_csv(file_path):
 
 def get_ai_narrative(stats, license_key):
     gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
-    payload = {
-        "stats": stats,
-        "license_key": str(license_key or "").strip(),
-    }
+    payload = gatekeeper_payload(stats, license_key)
 
     try:
         response = requests.post(
             f"{gatekeeper_url}/verify-and-generate",
             json=payload,
+            headers={
+                "Authorization": authorization_header(payload),
+                "X-Payload-SHA256": payload_hash(payload),
+            },
             timeout=AI_TIMEOUT_SECONDS,
         )
         if response.status_code == 403:
