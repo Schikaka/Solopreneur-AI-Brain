@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Workspace Admin - NarrativeAI</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23111827'/%3E%3Ctext x='32' y='41' text-anchor='middle' font-family='Arial' font-size='30' font-weight='700' fill='white'%3EN%3C/text%3E%3C/svg%3E">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;750;800&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --surface-strong: #111827;
+        --text: #172033;
+        --muted: #667085;
+        --line: #e2e8f0;
+        --blue: #2563eb;
+        --slate: #334155;
+        --teal: #0f766e;
+        --amber: #b45309;
+        --green: #15803d;
+        --red: #b42318;
+        --shadow: 0 18px 45px rgba(20, 32, 55, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          linear-gradient(180deg, rgba(15, 118, 110, 0.09), rgba(15, 118, 110, 0) 320px),
+          var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      button,
+      input {
+        font: inherit;
+      }
+
+      .shell {
+        width: min(980px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 22px 0 38px;
+      }
+
+      .topbar,
+      .brand,
+      .top-actions,
+      .status {
+        display: flex;
+        align-items: center;
+      }
+
+      .topbar {
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 32px;
+      }
+
+      .brand {
+        gap: 12px;
+        font-weight: 800;
+        letter-spacing: 0;
+      }
+
+      .mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 8px;
+        background: var(--surface-strong);
+        color: white;
+      }
+
+      .top-actions {
+        gap: 14px;
+      }
+
+      .nav-link {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--slate);
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .nav-link:hover {
+        border-color: #94a3b8;
+        background: #f8fafc;
+      }
+
+      .status {
+        gap: 8px;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: var(--green);
+      }
+
+      .page-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 18px;
+        align-items: flex-end;
+        margin-bottom: 18px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        font-size: 34px;
+        line-height: 1.08;
+        letter-spacing: 0;
+      }
+
+      h2 {
+        font-size: 18px;
+        letter-spacing: 0;
+      }
+
+      .page-head p {
+        max-width: 560px;
+        margin-top: 10px;
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .admin-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 280px;
+        gap: 18px;
+        align-items: start;
+      }
+
+      .panel {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .settings-card {
+        overflow: hidden;
+      }
+
+      .settings-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        padding: 16px 16px 0;
+      }
+
+      .settings-tab {
+        min-height: 38px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fafc;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .settings-tab[aria-selected="true"] {
+        border-color: #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+      }
+
+      .settings-panel {
+        padding: 18px;
+      }
+
+      .settings-panel[hidden] {
+        display: none;
+      }
+
+      .field {
+        display: grid;
+        gap: 8px;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .logo-input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        margin: -1px;
+        padding: 0;
+        border: 0;
+        overflow: hidden;
+        clip: rect(0 0 0 0);
+        clip-path: inset(50%);
+        opacity: 0;
+        white-space: nowrap;
+      }
+
+      .logo-picker {
+        display: grid;
+        min-height: 126px;
+        place-items: center;
+        padding: 18px;
+        border: 1px dashed #94a3b8;
+        border-radius: 8px;
+        background: #f8fafc;
+        color: var(--slate);
+        cursor: pointer;
+        text-align: center;
+      }
+
+      .logo-picker:hover {
+        border-color: var(--blue);
+        background: #f1f5f9;
+      }
+
+      .logo-picker strong,
+      .logo-picker span {
+        display: block;
+      }
+
+      .logo-picker strong {
+        color: var(--text);
+        font-size: 14px;
+      }
+
+      .logo-picker span {
+        margin-top: 5px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .logo-preview {
+        display: flex;
+        min-height: 62px;
+        align-items: center;
+        gap: 12px;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .logo-preview img {
+        display: block;
+        width: auto;
+        max-width: 160px;
+        max-height: 54px;
+        padding: 6px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        object-fit: contain;
+      }
+
+      .license-control {
+        display: grid;
+        grid-template-columns: 1fr 42px;
+        gap: 8px;
+      }
+
+      .license-input {
+        width: 100%;
+        min-height: 42px;
+        padding: 9px 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .license-input:focus {
+        border-color: var(--blue);
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        outline: none;
+      }
+
+      .icon-button {
+        display: grid;
+        min-height: 42px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        color: var(--slate);
+        cursor: pointer;
+      }
+
+      .icon-button:hover {
+        border-color: #94a3b8;
+        background: #f8fafc;
+      }
+
+      .icon-button svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 2;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .button {
+        min-height: 40px;
+        padding: 0 14px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--blue);
+        color: white;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .button.secondary {
+        border: 1px solid var(--line);
+        background: white;
+        color: var(--text);
+      }
+
+      .button:hover {
+        filter: brightness(0.97);
+      }
+
+      .admin-status {
+        min-height: 22px;
+        margin-top: 14px;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .admin-status.success {
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      .admin-status.error {
+        color: var(--red);
+        font-weight: 700;
+      }
+
+      .summary-panel {
+        padding: 18px;
+      }
+
+      .summary-panel h2 {
+        margin-bottom: 12px;
+      }
+
+      .status-list {
+        display: grid;
+        gap: 0;
+        margin: 0;
+        border-top: 1px solid var(--line);
+      }
+
+      .status-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 5px;
+        padding: 13px 0;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .status-row dt {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status-row dd {
+        margin: 0;
+        color: var(--text);
+        font-size: 14px;
+        font-weight: 750;
+      }
+
+      .status-row dd.ready {
+        color: var(--green);
+      }
+
+      .status-row dd.pending {
+        color: var(--amber);
+      }
+
+      @media (max-width: 760px) {
+        .shell {
+          width: min(100% - 20px, 980px);
+          padding-top: 16px;
+        }
+
+        .topbar,
+        .page-head,
+        .top-actions {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .admin-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">N</div>
+          <span>NarrativeAI</span>
+        </div>
+        <div class="top-actions">
+          <a class="nav-link" href="/">Report Builder</a>
+          <div class="status"><span class="dot" aria-hidden="true"></span><span>Admin ready</span></div>
+        </div>
+      </header>
+
+      <section class="page-head">
+        <div>
+          <h1>Workspace Admin</h1>
+          <p>Manage client report branding and protected access away from the main presentation screen.</p>
+        </div>
+      </section>
+
+      <div class="admin-layout">
+        <section class="panel settings-card" aria-label="Workspace settings">
+          <div class="settings-tabs" role="tablist" aria-label="Workspace settings">
+            <button class="settings-tab" id="branding-tab" type="button" role="tab" aria-selected="true" aria-controls="branding-panel">Branding</button>
+            <button class="settings-tab" id="access-tab" type="button" role="tab" aria-selected="false" aria-controls="access-panel">Access</button>
+          </div>
+
+          <div class="settings-panel" id="branding-panel" role="tabpanel" aria-labelledby="branding-tab">
+            <div class="field">
+              <label for="agency-logo">Agency Logo</label>
+              <input class="logo-input" id="agency-logo" type="file" accept="image/png,image/jpeg">
+              <label class="logo-picker" for="agency-logo">
+                <span>
+                  <strong>Upload Agency Logo</strong>
+                  <span>PNG or JPG for report headers</span>
+                </span>
+              </label>
+            </div>
+            <div class="logo-preview" id="logo-preview">No logo uploaded</div>
+            <div class="actions">
+              <button class="button secondary" id="remove-logo" type="button">Remove Logo</button>
+            </div>
+            <div class="admin-status" id="branding-status" role="status" aria-live="polite"></div>
+          </div>
+
+          <div class="settings-panel" id="access-panel" role="tabpanel" aria-labelledby="access-tab" hidden>
+            <div class="field">
+              <label for="license-key">License Key</label>
+              <div class="license-control">
+                <input class="license-input" id="license-key" type="password" placeholder="Enter license key" autocomplete="off" spellcheck="false">
+                <button class="icon-button" id="toggle-license" type="button" aria-label="Show license key">
+                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+                    <circle cx="12" cy="12" r="3"></circle>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="actions">
+              <button class="button" id="save-access" type="button">Save Access</button>
+              <button class="button secondary" id="clear-access" type="button">Clear</button>
+            </div>
+            <div class="admin-status" id="access-status" role="status" aria-live="polite"></div>
+          </div>
+        </section>
+
+        <aside class="panel summary-panel" aria-label="Workspace status">
+          <h2>Workspace Status</h2>
+          <dl class="status-list">
+            <div class="status-row">
+              <dt>Access</dt>
+              <dd id="access-state">Checking</dd>
+            </div>
+            <div class="status-row">
+              <dt>Branding</dt>
+              <dd id="branding-state">Checking</dd>
+            </div>
+            <div class="status-row">
+              <dt>Gatekeeper</dt>
+              <dd class="ready">Configured</dd>
+            </div>
+          </dl>
+        </aside>
+      </div>
+    </main>
+
+    <script>
+      const logoStorageKey = "narrativeai.agencyLogo";
+      const licenseStorageKey = "narrativeai.licenseKey";
+      const logoInput = document.querySelector("#agency-logo");
+      const logoPreview = document.querySelector("#logo-preview");
+      const removeLogoButton = document.querySelector("#remove-logo");
+      const brandingStatus = document.querySelector("#branding-status");
+      const brandingState = document.querySelector("#branding-state");
+      const licenseInput = document.querySelector("#license-key");
+      const licenseToggle = document.querySelector("#toggle-license");
+      const saveAccessButton = document.querySelector("#save-access");
+      const clearAccessButton = document.querySelector("#clear-access");
+      const accessStatus = document.querySelector("#access-status");
+      const accessState = document.querySelector("#access-state");
+      const settingsTabs = document.querySelectorAll(".settings-tab");
+      const settingsPanels = document.querySelectorAll(".settings-panel");
+      let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
+
+      function setStatus(element, message, kind = "") {
+        element.className = kind ? `admin-status ${kind}` : "admin-status";
+        element.textContent = message;
+      }
+
+      function updateSummary() {
+        const hasLicense = Boolean((localStorage.getItem(licenseStorageKey) || "").trim());
+        const hasLogo = Boolean(localStorage.getItem(logoStorageKey));
+        accessState.textContent = hasLicense ? "Protected" : "Needs setup";
+        accessState.className = hasLicense ? "ready" : "pending";
+        brandingState.textContent = hasLogo ? "Logo ready" : "Default brand";
+        brandingState.className = hasLogo ? "ready" : "pending";
+      }
+
+      function updateLogoPreview() {
+        logoPreview.innerHTML = agencyLogoDataUrl
+          ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
+          : "No logo uploaded";
+        updateSummary();
+      }
+
+      settingsTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          settingsTabs.forEach((item) => {
+            item.setAttribute("aria-selected", String(item === tab));
+          });
+          settingsPanels.forEach((panel) => {
+            panel.hidden = panel.id !== tab.getAttribute("aria-controls");
+          });
+        });
+      });
+
+      logoInput.addEventListener("change", () => {
+        const logoFile = logoInput.files[0];
+        if (!logoFile) {
+          return;
+        }
+
+        if (!logoFile.type.match(/^image\/(png|jpeg)$/)) {
+          setStatus(brandingStatus, "Upload a PNG or JPEG logo.", "error");
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.addEventListener("load", () => {
+          agencyLogoDataUrl = reader.result;
+          localStorage.setItem(logoStorageKey, agencyLogoDataUrl);
+          updateLogoPreview();
+          setStatus(brandingStatus, "Branding saved.", "success");
+        });
+        reader.readAsDataURL(logoFile);
+      });
+
+      removeLogoButton.addEventListener("click", () => {
+        agencyLogoDataUrl = "";
+        logoInput.value = "";
+        localStorage.removeItem(logoStorageKey);
+        updateLogoPreview();
+        setStatus(brandingStatus, "Branding cleared.", "success");
+      });
+
+      licenseInput.value = localStorage.getItem(licenseStorageKey) || "";
+      licenseToggle.addEventListener("click", () => {
+        const shouldShow = licenseInput.type === "password";
+        licenseInput.type = shouldShow ? "text" : "password";
+        licenseToggle.setAttribute("aria-label", shouldShow ? "Hide license key" : "Show license key");
+      });
+
+      saveAccessButton.addEventListener("click", () => {
+        const licenseKey = licenseInput.value.trim();
+        if (!licenseKey) {
+          localStorage.removeItem(licenseStorageKey);
+          updateSummary();
+          setStatus(accessStatus, "Access needs a key before CSV analysis.", "error");
+          return;
+        }
+
+        localStorage.setItem(licenseStorageKey, licenseKey);
+        updateSummary();
+        setStatus(accessStatus, "Access saved.", "success");
+      });
+
+      clearAccessButton.addEventListener("click", () => {
+        licenseInput.value = "";
+        localStorage.removeItem(licenseStorageKey);
+        updateSummary();
+        setStatus(accessStatus, "Access cleared.", "success");
+      });
+
+      updateLogoPreview();
+      updateSummary();
+    </script>
+  </body>
+</html>

@@ -84,6 +84,31 @@
         font-size: 14px;
       }
 
+      .top-actions {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .admin-link {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--slate);
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+      }
+
+      .admin-link:hover {
+        border-color: #94a3b8;
+        background: #f8fafc;
+      }
+
       .dot {
         width: 8px;
         height: 8px;
@@ -326,220 +351,11 @@
         background: #f8fafc;
       }
 
-      .branding-box {
-        margin-top: 22px;
-        overflow: hidden;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: var(--surface);
-      }
-
-      .branding-box h2 {
-        margin: 0;
-        font-size: 16px;
-      }
-
-      .branding-box label {
-        display: block;
-        margin-bottom: 8px;
-        color: var(--muted);
-        font-size: 13px;
-        font-weight: 700;
-      }
-
-      .settings-head {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        padding: 14px 14px 0;
-      }
-
-      .settings-tabs {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 6px;
-        padding: 12px 14px 0;
-      }
-
-      .settings-tab {
-        min-height: 34px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #f8fafc;
-        color: var(--muted);
-        cursor: pointer;
-        font: inherit;
-        font-size: 13px;
-        font-weight: 800;
-      }
-
-      .settings-tab[aria-selected="true"] {
-        border-color: #bfdbfe;
-        background: #eff6ff;
-        color: #1e3a8a;
-      }
-
-      .settings-panel {
-        padding: 14px;
-      }
-
-      .settings-panel[hidden] {
-        display: none;
-      }
-
-      .license-field {
-        margin-top: 0;
-      }
-
-      .license-control {
-        display: grid;
-        grid-template-columns: 1fr 42px;
-        gap: 8px;
-      }
-
-      .license-input {
-        width: 100%;
-        min-height: 40px;
-        padding: 9px 10px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #fbfcff;
-        color: var(--text);
-        font: inherit;
-        font-size: 14px;
-        font-weight: 700;
-      }
-
-      .license-input:focus {
-        border-color: var(--blue);
-        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
-        outline: none;
-      }
-
-      .license-toggle {
-        display: grid;
-        min-height: 40px;
-        place-items: center;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #ffffff;
-        color: var(--slate);
-        cursor: pointer;
-      }
-
-      .license-toggle:hover {
-        border-color: #94a3b8;
-        background: #f8fafc;
-      }
-
-      .license-toggle svg {
-        width: 18px;
-        height: 18px;
-        stroke-width: 2;
-      }
-
-      .access-summary {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 8px;
-        margin-top: 12px;
-      }
-
-      .access-summary div {
-        min-height: 64px;
-        padding: 10px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: #f8fafc;
-      }
-
-      .access-summary span {
-        display: block;
-        color: var(--muted);
-        font-size: 12px;
-        font-weight: 800;
-      }
-
-      .access-summary strong {
-        display: block;
-        margin-top: 8px;
-        color: var(--text);
-        font-size: 14px;
-      }
-
-      .logo-picker {
-        position: relative;
-        display: grid;
-        min-height: 92px;
-        place-items: center;
-        padding: 14px;
-        border: 1px dashed #94a3b8;
-        border-radius: 8px;
-        background: #f8fafc;
-        color: var(--slate);
-        cursor: pointer;
-        text-align: center;
-      }
-
-      .logo-picker:hover {
-        border-color: var(--blue);
-        background: #f1f5f9;
-      }
-
-      .logo-picker strong,
-      .logo-picker span {
-        display: block;
-      }
-
-      .logo-picker strong {
-        font-size: 13px;
-      }
-
-      .logo-picker span {
-        margin-top: 4px;
-        color: var(--muted);
-        font-size: 12px;
-      }
-
-      .logo-input {
-        position: absolute;
-        width: 1px;
-        height: 1px;
-        margin: -1px;
-        padding: 0;
-        border: 0;
-        overflow: hidden;
-        clip: rect(0 0 0 0);
-        clip-path: inset(50%);
-        opacity: 0;
-        white-space: nowrap;
-      }
-
-      .logo-preview {
-        display: flex;
-        min-height: 54px;
-        align-items: center;
-        gap: 12px;
-        margin-top: 12px;
-        color: var(--muted);
-        font-size: 13px;
-      }
-
-      .logo-preview img,
       .report-logo {
         display: block;
         width: auto;
         max-width: 150px;
         object-fit: contain;
-      }
-
-      .logo-preview img {
-        max-height: 48px;
-        padding: 6px;
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        background: white;
       }
 
       .report-branding {
@@ -679,10 +495,14 @@
           flex-direction: column;
         }
 
+        .top-actions {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
         .metrics,
         .insights,
-        .actions,
-        .access-summary {
+        .actions {
           grid-template-columns: 1fr;
         }
 
@@ -704,57 +524,16 @@
           <div class="mark" aria-hidden="true">N</div>
           <span>NarrativeAI</span>
         </div>
-        <div class="status"><span class="dot" aria-hidden="true"></span><span>Local preview running</span></div>
+        <div class="top-actions">
+          <a class="admin-link" href="/admin">Admin</a>
+          <div class="status"><span class="dot" aria-hidden="true"></span><span>Local preview running</span></div>
+        </div>
       </header>
 
       <div class="workspace">
         <aside class="panel">
           <h1>Client report narrative builder</h1>
           <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
-          <section class="branding-box">
-            <div class="settings-head">
-              <h2>Workspace</h2>
-            </div>
-            <div class="settings-tabs" role="tablist" aria-label="Workspace settings">
-              <button class="settings-tab" id="branding-tab" type="button" role="tab" aria-selected="true" aria-controls="branding-panel">Branding</button>
-              <button class="settings-tab" id="access-tab" type="button" role="tab" aria-selected="false" aria-controls="access-panel">Access</button>
-            </div>
-            <div class="settings-panel" id="branding-panel" role="tabpanel" aria-labelledby="branding-tab">
-              <label for="agency-logo">Agency Logo</label>
-              <input class="logo-input" id="agency-logo" type="file" accept="image/png,image/jpeg">
-              <label class="logo-picker" for="agency-logo">
-                <span>
-                  <strong>Upload Agency Logo</strong>
-                  <span>PNG or JPG for report headers</span>
-                </span>
-              </label>
-              <div class="logo-preview" id="logo-preview">No logo uploaded</div>
-            </div>
-            <div class="settings-panel" id="access-panel" role="tabpanel" aria-labelledby="access-tab" hidden>
-              <div class="license-field">
-                <label for="license-key">License Key</label>
-                <div class="license-control">
-                  <input class="license-input" id="license-key" type="password" placeholder="Enter license key" autocomplete="off" spellcheck="false">
-                  <button class="license-toggle" id="toggle-license" type="button" aria-label="Show license key">
-                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
-                      <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                  </button>
-                </div>
-              </div>
-              <div class="access-summary">
-                <div>
-                  <span>Status</span>
-                  <strong>Protected</strong>
-                </div>
-                <div>
-                  <span>Gatekeeper</span>
-                  <strong>Connected</strong>
-                </div>
-              </div>
-            </div>
-          </section>
           <form class="upload-box" id="upload-form">
             <label for="csv-file">Marketing CSV</label>
             <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
@@ -788,12 +567,6 @@
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
       const statusBox = document.querySelector("#form-status");
-      const logoInput = document.querySelector("#agency-logo");
-      const logoPreview = document.querySelector("#logo-preview");
-      const licenseInput = document.querySelector("#license-key");
-      const licenseToggle = document.querySelector("#toggle-license");
-      const settingsTabs = document.querySelectorAll(".settings-tab");
-      const settingsPanels = document.querySelectorAll(".settings-panel");
       const logoStorageKey = "narrativeai.agencyLogo";
       const licenseStorageKey = "narrativeai.licenseKey";
       let latestNarrative = "";
@@ -818,14 +591,8 @@
         return `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`;
       }
 
-      function updateLogoPreview() {
-        logoPreview.innerHTML = agencyLogoDataUrl
-          ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
-          : "No logo uploaded";
-      }
-
       function getLicenseKey() {
-        return licenseInput.value.trim();
+        return (localStorage.getItem(licenseStorageKey) || "").trim();
       }
 
       function cleanNarrativeTitle(line) {
@@ -1203,9 +970,15 @@
           return;
         }
 
+        const licenseKey = getLicenseKey();
+        if (!licenseKey) {
+          errorBox.textContent = "Open Admin to finish workspace access before analyzing CSVs.";
+          return;
+        }
+
         const body = new FormData();
         body.append("file", file);
-        body.append("license_key", getLicenseKey());
+        body.append("license_key", licenseKey);
 
         try {
           setBusy(true, `Analyzing ${file.name}...`);
@@ -1229,51 +1002,6 @@
       });
 
       sampleButton.addEventListener("click", loadSample);
-      settingsTabs.forEach((tab) => {
-        tab.addEventListener("click", () => {
-          settingsTabs.forEach((item) => {
-            item.setAttribute("aria-selected", String(item === tab));
-          });
-          settingsPanels.forEach((panel) => {
-            panel.hidden = panel.id !== tab.getAttribute("aria-controls");
-          });
-        });
-      });
-
-      licenseInput.value = localStorage.getItem(licenseStorageKey) || "";
-      licenseInput.addEventListener("input", () => {
-        localStorage.setItem(licenseStorageKey, getLicenseKey());
-      });
-      licenseToggle.addEventListener("click", () => {
-        const shouldShow = licenseInput.type === "password";
-        licenseInput.type = shouldShow ? "text" : "password";
-        licenseToggle.setAttribute("aria-label", shouldShow ? "Hide license key" : "Show license key");
-      });
-
-      logoInput.addEventListener("change", () => {
-        errorBox.textContent = "";
-        const logoFile = logoInput.files[0];
-        if (!logoFile) {
-          return;
-        }
-
-        if (!logoFile.type.match(/^image\/(png|jpeg)$/)) {
-          errorBox.textContent = "Upload a PNG or JPEG logo.";
-          return;
-        }
-
-        const reader = new FileReader();
-        reader.addEventListener("load", () => {
-          agencyLogoDataUrl = reader.result;
-          localStorage.setItem(logoStorageKey, agencyLogoDataUrl);
-          updateLogoPreview();
-          if (currentReportData) {
-            renderReport(currentReportData, document.querySelector(".report-source")?.textContent || "Report loaded");
-          }
-        });
-        reader.readAsDataURL(logoFile);
-      });
-
       report.addEventListener("click", async (event) => {
         const copyButton = event.target.closest("#copy-narrative");
         const pdfButton = event.target.closest("#download-pdf");
@@ -1306,7 +1034,6 @@
           }, 3200);
         }
       });
-      updateLogoPreview();
       loadSample();
     </script>
   </body>

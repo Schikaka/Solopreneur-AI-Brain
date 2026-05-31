@@ -65,6 +65,10 @@ def create_app(test_config=None):
     def index():
         return render_template("index.html")
 
+    @app.route("/admin")
+    def admin():
+        return render_template("admin.html")
+
     @app.get("/api/sample")
     def sample_report():
         license_key = request.args.get("license_key") or os.getenv("DEMO_LICENSE_KEY", "DEMO123")

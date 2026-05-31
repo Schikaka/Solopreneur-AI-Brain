@@ -37,6 +37,13 @@ def test_healthz(client):
     assert response.get_json() == {"status": "ok"}
 
 
+def test_admin_page(client):
+    response = client.get("/admin")
+
+    assert response.status_code == 200
+    assert b"Workspace Admin" in response.data
+
+
 def test_sample_report(client):
     response = client.get("/api/sample")
     payload = response.get_json()
