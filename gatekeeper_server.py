@@ -3,13 +3,180 @@ import os
 
 import requests
 from dotenv import load_dotenv
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, render_template_string, request
 
 
 load_dotenv()
 
 VALID_LICENSE_KEYS = {"DEMO123", "TEST456"}
 OPENAI_TIMEOUT_SECONDS = 30
+GATEKEEPER_PAGE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NarrativeAI Gatekeeper</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --text: #172033;
+        --muted: #667085;
+        --line: #e2e8f0;
+        --blue: #2563eb;
+        --green: #15803d;
+        --red: #b42318;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        display: grid;
+        min-height: 100vh;
+        place-items: center;
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      main {
+        width: min(720px, calc(100% - 32px));
+        padding: 28px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--surface);
+        box-shadow: 0 18px 45px rgba(20, 32, 55, 0.08);
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 4vw, 42px);
+        line-height: 1;
+      }
+
+      p {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 18px;
+        color: var(--green);
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 999px;
+        background: currentColor;
+      }
+
+      form {
+        display: grid;
+        gap: 12px;
+        margin-top: 22px;
+      }
+
+      label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      input {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        font: inherit;
+        font-weight: 750;
+      }
+
+      button {
+        min-height: 44px;
+        border: 0;
+        border-radius: 8px;
+        background: var(--blue);
+        color: #ffffff;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 800;
+      }
+
+      pre {
+        min-height: 96px;
+        margin: 18px 0 0;
+        padding: 14px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fafc;
+        color: var(--muted);
+        white-space: pre-wrap;
+      }
+
+      .error {
+        color: var(--red);
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="status"><span class="dot" aria-hidden="true"></span>Gatekeeper Online</div>
+      <h1>NarrativeAI Gatekeeper</h1>
+      <p>This server verifies license keys and generates narratives without exposing the API key to the local client.</p>
+      <form id="gatekeeper-form">
+        <label for="license-key">Test License Key</label>
+        <input id="license-key" value="DEMO123" autocomplete="off" spellcheck="false">
+        <button type="submit">Verify And Generate</button>
+      </form>
+      <pre id="result">Ready. Try DEMO123 or TEST456.</pre>
+    </main>
+    <script>
+      const form = document.querySelector("#gatekeeper-form");
+      const result = document.querySelector("#result");
+      form.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        result.className = "";
+        result.textContent = "Checking license...";
+        const response = await fetch("/verify-and-generate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            license_key: document.querySelector("#license-key").value.trim(),
+            stats: {
+              total_revenue: 13650,
+              total_spend: 2980,
+              avg_roas: 4.58,
+              total_conversions: 252,
+              top_campaign: "Summer Sale Search"
+            }
+          })
+        });
+        const payload = await response.json();
+        if (!response.ok) {
+          result.className = "error";
+          result.textContent = payload.error || "Gatekeeper request failed.";
+          return;
+        }
+        result.textContent = payload.narrative;
+      });
+    </script>
+  </body>
+</html>
+"""
 
 
 def _env_int(name, default):
@@ -67,6 +234,10 @@ def generate_narrative(stats):
 
 def create_app():
     app = Flask(__name__)
+
+    @app.get("/")
+    def index():
+        return render_template_string(GATEKEEPER_PAGE)
 
     @app.get("/healthz")
     def health_check():

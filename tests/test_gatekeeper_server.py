@@ -13,6 +13,16 @@ def test_gatekeeper_rejects_invalid_license():
     assert response.get_json()["error"] == "Invalid license key."
 
 
+def test_gatekeeper_index_page_is_visible():
+    client = create_app().test_client()
+
+    response = client.get("/")
+
+    assert response.status_code == 200
+    assert b"Gatekeeper Online" in response.data
+    assert b"Verify And Generate" in response.data
+
+
 def test_gatekeeper_valid_license_returns_narrative_without_local_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("EMERGENT_LLM_KEY", raising=False)
