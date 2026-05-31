@@ -1,5 +1,6 @@
 import os
 import uuid
+from hashlib import sha256
 from pathlib import Path
 
 from flask import Flask, jsonify, render_template, request
@@ -43,6 +44,7 @@ def create_app(test_config=None):
         app.config.update(test_config)
 
     Path(app.config["UPLOAD_DIR"]).mkdir(parents=True, exist_ok=True)
+    sample_report_cache = {}
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_large_upload(error):
@@ -72,8 +74,25 @@ def create_app(test_config=None):
     @app.get("/api/sample")
     def sample_report():
         license_key = request.args.get("license_key") or os.getenv("DEMO_LICENSE_KEY", "DEMO123")
+        sample_path = Path(app.config["SAMPLE_CSV_PATH"])
         try:
-            return jsonify(analyze_data(app.config["SAMPLE_CSV_PATH"], license_key=license_key))
+            sample_fingerprint = sample_path.stat().st_mtime_ns
+            resolved_sample_path = str(sample_path.resolve())
+        except OSError:
+            sample_fingerprint = None
+            resolved_sample_path = str(sample_path)
+
+        license_hash = sha256(str(license_key).encode("utf-8")).hexdigest()
+        cache_key = (resolved_sample_path, sample_fingerprint, license_hash)
+        if cache_key in sample_report_cache:
+            return jsonify(sample_report_cache[cache_key])
+
+        try:
+            report = analyze_data(sample_path, license_key=license_key)
+            if len(sample_report_cache) > 16:
+                sample_report_cache.clear()
+            sample_report_cache[cache_key] = report
+            return jsonify(report)
         except PermissionError as exc:
             return jsonify({"error": str(exc)}), 403
         except Exception as exc:

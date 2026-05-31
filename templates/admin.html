@@ -538,6 +538,8 @@
       const accessState = document.querySelector("#access-state");
       const settingsTabs = document.querySelectorAll(".settings-tab");
       const settingsPanels = document.querySelectorAll(".settings-panel");
+      const sampleReportCacheKey = "narrativeai.sampleReport";
+      const sampleReportCacheTtlMs = 6 * 60 * 60 * 1000;
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
 
       function setStatus(element, message, kind = "") {
@@ -559,6 +561,45 @@
           ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
           : "No logo uploaded";
         updateSummary();
+      }
+
+      function readSampleReportCache() {
+        try {
+          const cached = JSON.parse(sessionStorage.getItem(sampleReportCacheKey) || "null");
+          if (!cached?.data || !cached?.savedAt) {
+            return null;
+          }
+
+          if (Date.now() - cached.savedAt > sampleReportCacheTtlMs) {
+            sessionStorage.removeItem(sampleReportCacheKey);
+            return null;
+          }
+
+          return cached.data;
+        } catch (error) {
+          sessionStorage.removeItem(sampleReportCacheKey);
+          return null;
+        }
+      }
+
+      async function warmSampleReportCache() {
+        if (readSampleReportCache()) {
+          return;
+        }
+
+        const licenseKey = (localStorage.getItem(licenseStorageKey) || "").trim() || "DEMO123";
+        try {
+          const response = await fetch(`/api/sample?license_key=${encodeURIComponent(licenseKey)}`);
+          const data = await response.json();
+          if (response.ok) {
+            sessionStorage.setItem(sampleReportCacheKey, JSON.stringify({
+              data,
+              savedAt: Date.now()
+            }));
+          }
+        } catch (error) {
+          sessionStorage.removeItem(sampleReportCacheKey);
+        }
       }
 
       settingsTabs.forEach((tab) => {
@@ -631,6 +672,7 @@
 
       updateLogoPreview();
       updateSummary();
+      warmSampleReportCache();
     </script>
   </body>
 </html>

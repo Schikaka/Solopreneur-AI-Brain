@@ -53,6 +53,25 @@ def test_sample_report(client):
     assert payload["insights"][0]["title"] == "Highest ROAS day"
 
 
+def test_sample_report_is_cached(client, monkeypatch):
+    calls = 0
+
+    def fake_analyze_data(path, license_key):
+        nonlocal calls
+        calls += 1
+        return {"report": "cached sample", "license_key_seen": license_key}
+
+    monkeypatch.setattr("app.analyze_data", fake_analyze_data)
+
+    first_response = client.get("/api/sample?license_key=DEMO123")
+    second_response = client.get("/api/sample?license_key=DEMO123")
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert second_response.get_json()["report"] == "cached sample"
+    assert calls == 1
+
+
 def test_upload_requires_file(client):
     response = client.post("/api/analyze", data={})
 
