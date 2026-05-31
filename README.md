@@ -51,6 +51,10 @@ The Gatekeeper stores license hashes in `database.db` through SQLCipher when
 `pysqlcipher3` is installed. Production deployments should set
 `SQLCIPHER_REQUIRED=1` and use a long random `DATABASE_ENCRYPTION_KEY`.
 
+The Gatekeeper also runs a semantic firewall, OpenAI circuit breaker, idempotent
+fallback cache, and JSON structured logs. Set `REDIS_URL` to persist fallback
+cache entries outside process memory.
+
 ## Checks
 
 ```bash

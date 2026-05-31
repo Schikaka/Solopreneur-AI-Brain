@@ -22,6 +22,8 @@ environment secrets are configured.
   when `pysqlcipher3` is installed.
 - Gatekeeper report generation is rate limited to 5 requests per minute per IP.
 - Client pages receive nonce-based CSP headers for script execution.
+- Gatekeeper narrative generation is protected by a semantic firewall, OpenAI
+  circuit breaker, idempotent stable fallback cache, and JSON structured logs.
 
 ## Required Environment
 
@@ -33,6 +35,7 @@ environment secrets are configured.
 - `LICENSE_DB_PATH`
 - `LICENSE_SEED_KEYS`
 - `PORT`
+- `REDIS_URL` if fallback cache should survive process restarts
 - `MAX_UPLOAD_MB`
 
 ## Validation Commands
