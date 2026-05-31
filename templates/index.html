@@ -328,14 +328,14 @@
 
       .branding-box {
         margin-top: 22px;
-        padding: 14px;
+        overflow: hidden;
         border: 1px solid var(--line);
         border-radius: 8px;
         background: var(--surface);
       }
 
       .branding-box h2 {
-        margin-bottom: 10px;
+        margin: 0;
         font-size: 16px;
       }
 
@@ -347,8 +347,49 @@
         font-weight: 700;
       }
 
+      .settings-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 14px 0;
+      }
+
+      .settings-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        padding: 12px 14px 0;
+      }
+
+      .settings-tab {
+        min-height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fafc;
+        color: var(--muted);
+        cursor: pointer;
+        font: inherit;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .settings-tab[aria-selected="true"] {
+        border-color: #bfdbfe;
+        background: #eff6ff;
+        color: #1e3a8a;
+      }
+
+      .settings-panel {
+        padding: 14px;
+      }
+
+      .settings-panel[hidden] {
+        display: none;
+      }
+
       .license-field {
-        margin-top: 14px;
+        margin-top: 0;
       }
 
       .license-control {
@@ -396,6 +437,35 @@
         width: 18px;
         height: 18px;
         stroke-width: 2;
+      }
+
+      .access-summary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .access-summary div {
+        min-height: 64px;
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fafc;
+      }
+
+      .access-summary span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .access-summary strong {
+        display: block;
+        margin-top: 8px;
+        color: var(--text);
+        font-size: 14px;
       }
 
       .logo-picker {
@@ -611,7 +681,8 @@
 
         .metrics,
         .insights,
-        .actions {
+        .actions,
+        .access-summary {
           grid-template-columns: 1fr;
         }
 
@@ -641,26 +712,46 @@
           <h1>Client report narrative builder</h1>
           <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
           <section class="branding-box">
-            <h2>Branding</h2>
-            <label for="agency-logo">Agency Logo</label>
-            <input class="logo-input" id="agency-logo" type="file" accept="image/png,image/jpeg">
-            <label class="logo-picker" for="agency-logo">
-              <span>
-                <strong>Upload Agency Logo</strong>
-                <span>PNG or JPG for report headers</span>
-              </span>
-            </label>
-            <div class="logo-preview" id="logo-preview">No logo uploaded</div>
-            <div class="license-field">
-              <label for="license-key">License Key</label>
-              <div class="license-control">
-                <input class="license-input" id="license-key" type="password" placeholder="Enter license key" autocomplete="off" spellcheck="false">
-                <button class="license-toggle" id="toggle-license" type="button" aria-label="Show license key">
-                  <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
-                    <circle cx="12" cy="12" r="3"></circle>
-                  </svg>
-                </button>
+            <div class="settings-head">
+              <h2>Workspace</h2>
+            </div>
+            <div class="settings-tabs" role="tablist" aria-label="Workspace settings">
+              <button class="settings-tab" id="branding-tab" type="button" role="tab" aria-selected="true" aria-controls="branding-panel">Branding</button>
+              <button class="settings-tab" id="access-tab" type="button" role="tab" aria-selected="false" aria-controls="access-panel">Access</button>
+            </div>
+            <div class="settings-panel" id="branding-panel" role="tabpanel" aria-labelledby="branding-tab">
+              <label for="agency-logo">Agency Logo</label>
+              <input class="logo-input" id="agency-logo" type="file" accept="image/png,image/jpeg">
+              <label class="logo-picker" for="agency-logo">
+                <span>
+                  <strong>Upload Agency Logo</strong>
+                  <span>PNG or JPG for report headers</span>
+                </span>
+              </label>
+              <div class="logo-preview" id="logo-preview">No logo uploaded</div>
+            </div>
+            <div class="settings-panel" id="access-panel" role="tabpanel" aria-labelledby="access-tab" hidden>
+              <div class="license-field">
+                <label for="license-key">License Key</label>
+                <div class="license-control">
+                  <input class="license-input" id="license-key" type="password" placeholder="Enter license key" autocomplete="off" spellcheck="false">
+                  <button class="license-toggle" id="toggle-license" type="button" aria-label="Show license key">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6-10-6-10-6Z"></path>
+                      <circle cx="12" cy="12" r="3"></circle>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="access-summary">
+                <div>
+                  <span>Status</span>
+                  <strong>Protected</strong>
+                </div>
+                <div>
+                  <span>Gatekeeper</span>
+                  <strong>Connected</strong>
+                </div>
               </div>
             </div>
           </section>
@@ -701,6 +792,8 @@
       const logoPreview = document.querySelector("#logo-preview");
       const licenseInput = document.querySelector("#license-key");
       const licenseToggle = document.querySelector("#toggle-license");
+      const settingsTabs = document.querySelectorAll(".settings-tab");
+      const settingsPanels = document.querySelectorAll(".settings-panel");
       const logoStorageKey = "narrativeai.agencyLogo";
       const licenseStorageKey = "narrativeai.licenseKey";
       let latestNarrative = "";
@@ -1136,6 +1229,17 @@
       });
 
       sampleButton.addEventListener("click", loadSample);
+      settingsTabs.forEach((tab) => {
+        tab.addEventListener("click", () => {
+          settingsTabs.forEach((item) => {
+            item.setAttribute("aria-selected", String(item === tab));
+          });
+          settingsPanels.forEach((panel) => {
+            panel.hidden = panel.id !== tab.getAttribute("aria-controls");
+          });
+        });
+      });
+
       licenseInput.value = localStorage.getItem(licenseStorageKey) || "";
       licenseInput.addEventListener("input", () => {
         localStorage.setItem(licenseStorageKey, getLicenseKey());
