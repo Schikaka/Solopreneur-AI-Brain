@@ -35,8 +35,9 @@ Use a WSGI server instead of Flask's development server:
 gunicorn "gatekeeper_server:app" --bind 0.0.0.0:${PORT:-5001}
 ```
 
-The Gatekeeper reads Render's `PORT` environment variable, exposes `/healthz`
-and `/HEALTHZ`, and defaults to `0.0.0.0` in production or Render runtimes.
+The Gatekeeper reads Render's `PORT` environment variable, exposes `/healthz`,
+`/HEALTHZ`, `/readyness`, and `/readiness`, and defaults to `0.0.0.0` in
+production or Render runtimes.
 
 Set these environment variables before deploying:
 
@@ -50,6 +51,7 @@ Set these environment variables before deploying:
 - `LICENSE_SEED_KEYS`
 - `PORT`
 - `MAX_UPLOAD_MB`
+- `DOMAIN_URL`
 - `SQLCIPHER_REQUIRED=1`
 - `WAF_HEADER_CHECK=1`
 
@@ -69,7 +71,7 @@ cache entries outside process memory.
 2. Open the Render Blueprint flow:
    [https://dashboard.render.com/blueprint/new?repo=https://github.com/Schikaka/Solopreneur-AI-Brain](https://dashboard.render.com/blueprint/new?repo=https://github.com/Schikaka/Solopreneur-AI-Brain)
 
-3. Render will read `render.yaml`. Confirm the service is `narrativeai-gatekeeper`, the runtime is Python, the start command uses Gunicorn, and the health check path is `/healthz`.
+3. Render will read `render.yaml`. Confirm the service is `narrativeai-gatekeeper`, the runtime is Python, the start command uses Gunicorn, and the health check path is `/readyness`.
 
 4. Fill every secret marked `sync: false` in the Render dashboard:
    - `DATABASE_ENCRYPTION_KEY`: long random SQLCipher key.
@@ -80,6 +82,7 @@ cache entries outside process memory.
    - `EMERGENT_LLM_KEY`: production model key.
    - `REDIS_URL`: optional, but recommended for persistent fallback cache.
    - `ALLOWED_HOSTS`: optional custom domains, comma-separated. Render's own hostname is accepted automatically.
+   - `DOMAIN_URL`: production service URL. Use Render's generated URL first, for example `https://narrativeai-gatekeeper.onrender.com`, then replace it with the custom domain when DNS is live.
 
 5. In Stripe, create a production webhook endpoint:
    - Endpoint URL: `https://<your-render-service>.onrender.com/stripe/webhook`
@@ -92,6 +95,7 @@ cache entries outside process memory.
    - Render logs must show `startup_security_validation_passed`.
    - The same log line must include `database_encryption` as `encrypted`.
    - `sast_scan` must be `passed`.
+   - `curl https://<your-render-service>.onrender.com/readyness` must return `{"ok":true,"status":"ready",...}`.
    - `curl https://<your-render-service>.onrender.com/healthz` must return `{"service":"gatekeeper","status":"ok"}`.
    - A Stripe webhook test with the wrong signature must return `400`.
 
@@ -101,6 +105,8 @@ cache entries outside process memory.
 export GATEKEEPER_URL=https://<your-render-service>.onrender.com
 # or
 export GATEKEEPER_PUBLIC_URL=https://<your-render-service>.onrender.com
+# preferred production sync variable
+export DOMAIN_URL=https://<your-render-service>.onrender.com
 ```
 
 9. For real paying customers, add persistent storage before relying on the
@@ -113,6 +119,44 @@ export GATEKEEPER_PUBLIC_URL=https://<your-render-service>.onrender.com
 ```bash
 render blueprints validate
 ```
+
+## Launch Day Checklist
+
+Use this checklist before opening sales traffic or sending demo keys:
+
+1. GitHub `main` contains the latest launch commit and Render is connected to the repository.
+2. Render Blueprint is applied from `render.yaml`, with `healthCheckPath` set to `/readyness`.
+3. Render environment variables are complete:
+   - `APP_ENV=production`
+   - `SQLCIPHER_REQUIRED=1`
+   - `WAF_HEADER_CHECK=1`
+   - `DOMAIN_URL=https://<your-render-service>.onrender.com`
+   - `DATABASE_ENCRYPTION_KEY`
+   - `GATEKEEPER_JWT_SECRET`
+   - `SECRET_KEY`
+   - `LICENSE_SEED_KEYS`
+   - `STRIPE_WEBHOOK_SECRET`
+   - `EMERGENT_LLM_KEY`
+4. Render logs show `startup_security_validation_passed`.
+5. Readiness checks are live:
+   - `/readyness` returns `ok: true`.
+   - Database check reports `encrypted: true`.
+   - Startup validation reports `status: pass`.
+6. HTTPS hardening is confirmed:
+   - `Strict-Transport-Security` is present.
+   - Any production `http://` service URL has been replaced with `https://`.
+   - `ALLOWED_HOSTS` includes the production hostname or custom domain.
+7. Stripe production webhook is configured at `/stripe/webhook`, and a bad signature returns `400`.
+8. Admin Panel checks:
+   - Security & Compliance Health is green.
+   - Session Monitor shows no unexplained flagged keys.
+   - Sales & Leads can save a test lead.
+   - Generate 48h Demo Key returns a `DEMO-` key with an expiry timestamp.
+9. Main dashboard checks:
+   - About page shows the Elite Privacy Guarantee.
+   - Upgrade to Pro button opens the Stripe Payment Link.
+   - Sample report generation succeeds with a production license key.
+10. Rollback plan is ready: redeploy the previous successful Render deploy from the dashboard and rotate any exposed secrets before retrying launch.
 
 ## Standalone Distribution
 

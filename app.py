@@ -24,6 +24,7 @@ def resource_path(*parts):
 DEFAULT_SAMPLE_PATH = resource_path("dummy_marketing_data.csv")
 ALLOWED_EXTENSIONS = {".csv"}
 DEFAULT_GATEKEEPER_URL = "http://localhost:5001"
+DEFAULT_RENDER_URL = "https://narrativeai-gatekeeper.onrender.com"
 STABILITY_NOTICE = (
     "Our AI systems are currently optimizing resources. Your report has been prioritized. "
     "Please wait 30 seconds and retry."
@@ -37,12 +38,39 @@ def _env_int(name, default):
         return int(default)
 
 
+def _render_domain_url():
+    hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    if hostname:
+        return f"https://{hostname}"
+    if os.getenv("RENDER"):
+        return DEFAULT_RENDER_URL
+    return ""
+
+
+def _normalize_service_url(value):
+    normalized = str(value or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    if "://" not in normalized:
+        normalized = f"https://{normalized}"
+    if (
+        os.getenv("APP_ENV") == "production"
+        and normalized.startswith("http://")
+        and "localhost" not in normalized
+        and "127.0.0.1" not in normalized
+    ):
+        normalized = f"https://{normalized.removeprefix('http://')}"
+    return normalized.rstrip("/")
+
+
 def _gatekeeper_url():
-    return (
+    return _normalize_service_url(
         os.getenv("GATEKEEPER_URL")
         or os.getenv("GATEKEEPER_PUBLIC_URL")
+        or os.getenv("DOMAIN_URL")
+        or _render_domain_url()
         or DEFAULT_GATEKEEPER_URL
-    ).rstrip("/")
+    )
 
 
 def _default_business_settings():
@@ -108,6 +136,7 @@ def create_app(test_config=None):
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
         if request.path.startswith("/api/") or request.path == "/refine":
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -161,6 +190,10 @@ def create_app(test_config=None):
             app_version=app.config["APP_VERSION"],
             stripe_payment_link=_default_business_settings()["stripe_payment_link"],
         )
+
+    @app.route("/about")
+    def about():
+        return render_template("about.html")
 
     @app.route("/admin")
     def admin():
@@ -443,6 +476,6 @@ app = create_app()
 
 if __name__ == "__main__":
     port = _env_int("PORT", 5000)
-    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    debug = False if os.getenv("APP_ENV") == "production" else os.getenv("FLASK_DEBUG", "0") == "1"
     default_host = "0.0.0.0" if os.getenv("APP_ENV") == "production" or os.getenv("RENDER") else "127.0.0.1"
     app.run(host=os.getenv("HOST", default_host), port=port, debug=debug)

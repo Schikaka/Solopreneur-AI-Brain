@@ -115,6 +115,35 @@ def test_analyze_data_can_use_public_gatekeeper_url(monkeypatch):
     assert result["narrative"] == "Narrative from public gatekeeper"
 
 
+def test_analyze_data_can_use_domain_url_and_force_https(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"narrative": "Narrative from domain gatekeeper"}
+
+    def post(url, json, headers, timeout):
+        captured["url"] = url
+        return Response()
+
+    monkeypatch.delenv("GATEKEEPER_URL", raising=False)
+    monkeypatch.delenv("GATEKEEPER_PUBLIC_URL", raising=False)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("GATEKEEPER_JWT_SECRET", "test-gatekeeper-jwt-secret")
+    monkeypatch.setenv("DOMAIN_URL", "http://narrativeai-gatekeeper.onrender.com")
+    monkeypatch.setattr("narrative_logic.requests.post", post)
+
+    result = analyze_data("dummy_marketing_data.csv", license_key="DEMO123")
+
+    assert captured["url"] == "https://narrativeai-gatekeeper.onrender.com/verify-and-generate"
+    assert result["narrative"] == "Narrative from domain gatekeeper"
+
+
 def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
     captured = {}
 

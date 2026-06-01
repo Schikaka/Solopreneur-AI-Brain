@@ -212,7 +212,22 @@ def scan_static_controls(base_dir):
         {
             "name": "Production Gatekeeper URL sync",
             "path": "narrative_logic.py",
-            "required": ("GATEKEEPER_PUBLIC_URL", "DEFAULT_GATEKEEPER_URL", "GATEKEEPER_URL"),
+            "required": ("GATEKEEPER_PUBLIC_URL", "DEFAULT_GATEKEEPER_URL", "GATEKEEPER_URL", "DOMAIN_URL", "DEFAULT_RENDER_URL"),
+        },
+        {
+            "name": "Render readiness check",
+            "path": "gatekeeper_server.py",
+            "required": ("/readyness", "readiness_payload", "Strict-Transport-Security", "SQLCipher is required"),
+        },
+        {
+            "name": "Client HTTPS AJAX guard",
+            "path": "templates/index.html",
+            "required": ("forceHttpsUrl", "Upgrade to Pro", "dashboard-upgrade-link"),
+        },
+        {
+            "name": "Elite privacy guarantee",
+            "path": "templates/about.html",
+            "required": ("Elite Privacy Guarantee", "Zero raw CSV retention", "Fact-Check Lock", "Protected access boundary"),
         },
         {
             "name": "Startup validation",

@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 
 import build_dist
+import app as app_module
 from app import create_app
 
 
@@ -89,6 +90,7 @@ def test_index_has_nonce_csp(client):
     csp = response.headers["Content-Security-Policy"]
 
     assert response.status_code == 200
+    assert response.headers["Strict-Transport-Security"] == "max-age=63072000; includeSubDomains; preload"
     assert "script-src" in csp
     assert "'nonce-" in csp
     assert "https://cdn.tailwindcss.com" in csp
@@ -105,7 +107,10 @@ def test_index_has_nonce_csp(client):
     assert b"license-splash" in response.data
     assert b"startup-license-key" in response.data
     assert b"initialStripePaymentLink" in response.data
-    assert b"Upgrade to Elite" in response.data
+    assert b"Upgrade to Pro" in response.data
+    assert b"dashboard-upgrade-link" in response.data
+    assert b"forceHttpsUrl" in response.data
+    assert b'href="/about"' in response.data
     assert b"/api/business-settings" in response.data
     assert b"A premium update is available." in response.data
     assert b"renderReportSkeleton" in response.data
@@ -137,6 +142,25 @@ def test_index_has_nonce_csp(client):
     assert b"X-Device-ID" in response.data
     assert b"X-Device-HMAC" in response.data
     assert b"renewSecureSession" in response.data
+
+
+def test_about_page_contains_elite_privacy_guarantee(client):
+    response = client.get("/about")
+
+    assert response.status_code == 200
+    assert b"Elite Privacy Guarantee" in response.data
+    assert b"Zero raw CSV retention" in response.data
+    assert b"Local report ownership" in response.data
+    assert b"Protected access boundary" in response.data
+
+
+def test_domain_url_forces_https_in_production(monkeypatch):
+    monkeypatch.delenv("GATEKEEPER_URL", raising=False)
+    monkeypatch.delenv("GATEKEEPER_PUBLIC_URL", raising=False)
+    monkeypatch.setenv("APP_ENV", "production")
+    monkeypatch.setenv("DOMAIN_URL", "http://narrativeai-gatekeeper.onrender.com")
+
+    assert app_module._gatekeeper_url() == "https://narrativeai-gatekeeper.onrender.com"
 
 
 def test_system_status_ready(client, monkeypatch):

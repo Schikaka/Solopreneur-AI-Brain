@@ -921,7 +921,8 @@ def validate_waf_headers():
         return jsonify({"error": "Invalid edge host header."}), 400
 
     forwarded_proto = str(request.headers.get("X-Forwarded-Proto") or "").split(",", 1)[0].strip().lower()
-    if request.path.lower() != "/healthz" and forwarded_proto != "https":
+    readiness_paths = {"/healthz", "/readyness", "/readiness"}
+    if request.path.lower() not in readiness_paths and forwarded_proto != "https":
         log_event(logging.WARNING, "waf_proto_header_rejected", proto=forwarded_proto or "missing")
         return jsonify({"error": "Secure edge header required."}), 400
 
@@ -1994,8 +1995,50 @@ def compliance_health_payload(scan_result):
     return payload
 
 
+def readiness_payload(license_store, scan_result):
+    try:
+        license_store.ensure_initialized()
+        with license_store.connect() as connection:
+            connection.execute("SELECT COUNT(*) FROM license_keys").fetchone()
+            connection.execute("SELECT COUNT(*) FROM auth_alerts").fetchone()
+        database_ok = True
+        database_detail = "License database opened and required tables are queryable."
+    except Exception as exc:
+        database_ok = False
+        database_detail = f"License database readiness failed: {exc}"
+
+    encrypted = bool(getattr(license_store, "encrypted", False))
+    require_sqlcipher = bool(getattr(license_store, "require_sqlcipher", False))
+    sqlcipher_ok = encrypted or not require_sqlcipher
+    if require_sqlcipher and not encrypted:
+        database_ok = False
+        database_detail = "SQLCipher is required but the encrypted database driver is not active."
+
+    startup_ok = bool((scan_result or {}).get("ok"))
+    ok = bool(database_ok and sqlcipher_ok and startup_ok)
+    return {
+        "ok": ok,
+        "status": "ready" if ok else "not_ready",
+        "service": "gatekeeper",
+        "checks": {
+            "database": {
+                "ok": database_ok,
+                "detail": database_detail,
+                "encrypted": encrypted,
+                "sqlcipher_required": require_sqlcipher,
+            },
+            "startup_validation": {
+                "ok": startup_ok,
+                "status": (scan_result or {}).get("status", "unknown"),
+            },
+        },
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 def create_app():
     app = Flask(__name__)
+    app.config["DEBUG"] = False
     configure_structured_logging(app)
     limiter = _configure_rate_limiting(app)
     license_store = LicenseStore()
@@ -2039,6 +2082,8 @@ def create_app():
     @app.after_request
     def finish_request_context(response):
         response.headers["X-Request-ID"] = REQUEST_ID.get()
+        response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
+        response.headers["X-Content-Type-Options"] = "nosniff"
         if request.path in {"/verify-and-generate", "/refine"} or request.path.startswith("/admin/audit/"):
             response.headers["Cache-Control"] = "no-store"
         log_event(
@@ -2062,6 +2107,12 @@ def create_app():
     @app.get("/HEALTHZ")
     def health_check():
         return jsonify({"status": "ok", "service": "gatekeeper"})
+
+    @app.get("/readyness")
+    @app.get("/readiness")
+    def readiness_check():
+        payload = readiness_payload(license_store, app.config.get("COMPLIANCE_HEALTH", {}))
+        return jsonify(payload), 200 if payload["ok"] else 503
 
     @app.post("/check-updates")
     def check_updates():
@@ -2434,6 +2485,6 @@ app = create_app()
 
 if __name__ == "__main__":
     port = _env_int("PORT", 5001)
-    debug = os.getenv("FLASK_DEBUG", "0") == "1"
+    debug = False if os.getenv("APP_ENV") == "production" else os.getenv("FLASK_DEBUG", "0") == "1"
     default_host = "0.0.0.0" if os.getenv("APP_ENV") == "production" or os.getenv("RENDER") else "127.0.0.1"
     app.run(host=os.getenv("HOST", default_host), port=port, debug=debug)

@@ -27,6 +27,7 @@ AI_TIMEOUT_SECONDS = 30
 DIRECTIVE_TONES = {"Boardroom", "Startup", "Precise", "Persuasive"}
 DIRECTIVE_GOALS = {"Budget Request", "Performance Fix", "Retention"}
 DEFAULT_GATEKEEPER_URL = "http://localhost:5001"
+DEFAULT_RENDER_URL = "https://narrativeai-gatekeeper.onrender.com"
 
 
 def _missing_columns(df):
@@ -193,12 +194,39 @@ def read_marketing_csv(source):
     return normalize_marketing_data(df)
 
 
+def _render_domain_url():
+    hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    if hostname:
+        return f"https://{hostname}"
+    if os.getenv("RENDER"):
+        return DEFAULT_RENDER_URL
+    return ""
+
+
+def _normalize_service_url(value):
+    normalized = str(value or "").strip().rstrip("/")
+    if not normalized:
+        return ""
+    if "://" not in normalized:
+        normalized = f"https://{normalized}"
+    if (
+        os.getenv("APP_ENV") == "production"
+        and normalized.startswith("http://")
+        and "localhost" not in normalized
+        and "127.0.0.1" not in normalized
+    ):
+        normalized = f"https://{normalized.removeprefix('http://')}"
+    return normalized.rstrip("/")
+
+
 def _post_gatekeeper(path, payload):
-    gatekeeper_url = (
+    gatekeeper_url = _normalize_service_url(
         os.getenv("GATEKEEPER_URL")
         or os.getenv("GATEKEEPER_PUBLIC_URL")
+        or os.getenv("DOMAIN_URL")
+        or _render_domain_url()
         or DEFAULT_GATEKEEPER_URL
-    ).rstrip("/")
+    )
     headers = {
         "Authorization": authorization_header(payload),
         "X-Payload-SHA256": payload_hash(payload),

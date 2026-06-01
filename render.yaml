@@ -6,11 +6,15 @@ services:
     branch: main
     autoDeploy: true
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: gunicorn "gatekeeper_server:app" --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile -
-    healthCheckPath: /healthz
+    startCommand: gunicorn "gatekeeper_server:app" --bind 0.0.0.0:$PORT --workers ${WEB_CONCURRENCY:-2} --timeout 120 --worker-tmp-dir /dev/shm --access-logfile -
+    healthCheckPath: /readyness
     envVars:
       - key: APP_ENV
         value: production
+      - key: DOMAIN_URL
+        value: https://narrativeai-gatekeeper.onrender.com
+      - key: WEB_CONCURRENCY
+        value: "2"
       - key: SQLCIPHER_REQUIRED
         value: "1"
       - key: WAF_HEADER_CHECK

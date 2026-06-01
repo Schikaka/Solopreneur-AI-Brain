@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>About - NarrativeAI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;650;750;850&display=swap" rel="stylesheet">
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f8fafc;
+        --surface: #ffffff;
+        --text: #172033;
+        --muted: #667085;
+        --line: #e2e8f0;
+        --green: #15803d;
+        --blue: #2563eb;
+        --shadow: 0 18px 45px rgba(20, 32, 55, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: linear-gradient(180deg, rgba(21, 128, 61, 0.08), rgba(21, 128, 61, 0) 310px), var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      .shell {
+        width: min(900px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 24px 0 44px;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 48px;
+      }
+
+      .brand,
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 8px;
+        background: #111827;
+        color: white;
+        font-weight: 850;
+      }
+
+      .brand span {
+        font-weight: 850;
+      }
+
+      a {
+        color: inherit;
+      }
+
+      .nav-link {
+        min-height: 36px;
+        display: inline-flex;
+        align-items: center;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: #334155;
+        font-size: 13px;
+        font-weight: 750;
+        text-decoration: none;
+      }
+
+      .hero {
+        display: grid;
+        gap: 14px;
+        margin-bottom: 24px;
+      }
+
+      h1,
+      h2,
+      p {
+        margin: 0;
+      }
+
+      h1 {
+        max-width: 780px;
+        font-size: clamp(38px, 6vw, 68px);
+        line-height: 0.98;
+        letter-spacing: 0;
+      }
+
+      .hero p {
+        max-width: 660px;
+        color: var(--muted);
+        font-size: 18px;
+        line-height: 1.6;
+      }
+
+      .guarantee {
+        display: grid;
+        gap: 18px;
+        padding: 24px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .guarantee h2 {
+        font-size: 22px;
+        letter-spacing: 0;
+      }
+
+      .guarantee-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .promise {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .promise strong {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--green);
+        font-size: 14px;
+      }
+
+      .promise p {
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.55;
+      }
+
+      @media (max-width: 720px) {
+        .topbar,
+        .actions {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .guarantee-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="mark" aria-hidden="true">N</div>
+          <span>NarrativeAI</span>
+        </div>
+        <nav class="actions" aria-label="Primary">
+          <a class="nav-link" href="/">Report Builder</a>
+          <a class="nav-link" href="/admin">Admin</a>
+        </nav>
+      </header>
+
+      <section class="hero">
+        <h1>Client-ready marketing narratives without surrendering client data.</h1>
+        <p>NarrativeAI is the privacy-first reporting layer for agencies that already trust their own data stack and need faster executive communication.</p>
+      </section>
+
+      <section class="guarantee" aria-labelledby="privacy-guarantee-title">
+        <h2 id="privacy-guarantee-title">Elite Privacy Guarantee</h2>
+        <div class="guarantee-grid">
+          <article class="promise">
+            <strong>Zero raw CSV retention</strong>
+            <p>Uploaded files are processed in RAM for the active request and are not saved to a server uploads folder.</p>
+          </article>
+          <article class="promise">
+            <strong>Local report ownership</strong>
+            <p>The Local History Vault uses browser IndexedDB, keeping saved reports on the user's own machine.</p>
+          </article>
+          <article class="promise">
+            <strong>Fact-Check Lock</strong>
+            <p>Refinements preserve the original CSV metrics so narrative improvements cannot rewrite performance numbers.</p>
+          </article>
+          <article class="promise">
+            <strong>Protected access boundary</strong>
+            <p>License validation, model access, audit controls, and readiness checks stay behind the Gatekeeper service.</p>
+          </article>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

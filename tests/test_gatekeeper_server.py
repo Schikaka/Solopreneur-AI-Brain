@@ -238,6 +238,20 @@ def test_gatekeeper_compliance_health_reports_security_controls():
     assert payload["ips_blacklist_count"] == 0
 
 
+def test_gatekeeper_readyness_checks_database_and_hsts():
+    client = create_app().test_client()
+
+    response = client.get("/readyness")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert response.headers["Strict-Transport-Security"] == "max-age=63072000; includeSubDomains; preload"
+    assert payload["ok"] is True
+    assert payload["status"] == "ready"
+    assert payload["checks"]["database"]["ok"] is True
+    assert "encrypted" in payload["checks"]["database"]
+
+
 def test_check_updates_route_reports_premium_update(monkeypatch):
     monkeypatch.setenv("LATEST_APP_VERSION", "1.1.0")
     client = create_app().test_client()
