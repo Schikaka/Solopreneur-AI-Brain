@@ -758,6 +758,100 @@ class BusinessSettingsStore:
         }
 
 
+LEAD_STATUSES = ("Pitched", "Replied", "Booked", "Closed")
+
+
+def _normalize_lead_status(value):
+    normalized = str(value or "").strip().title()
+    return normalized if normalized in LEAD_STATUSES else "Pitched"
+
+
+class LeadStore:
+    def __init__(self, license_store):
+        self.license_store = license_store
+
+    def ensure_initialized(self):
+        self.license_store.ensure_initialized()
+        with self.license_store.connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS leads (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    agency_name TEXT NOT NULL,
+                    contact TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    notes TEXT NOT NULL
+                )
+                """
+            )
+            connection.commit()
+
+    def list_leads(self, limit=100):
+        self.ensure_initialized()
+        with self.license_store.connect() as connection:
+            rows = connection.execute(
+                """
+                SELECT id, created_at, updated_at, agency_name, contact, status, notes
+                FROM leads
+                ORDER BY updated_at DESC, created_at DESC
+                LIMIT ?
+                """,
+                (int(limit),),
+            ).fetchall()
+        keys = ("id", "created_at", "updated_at", "agency_name", "contact", "status", "notes")
+        return [dict(zip(keys, row)) for row in rows]
+
+    def add_lead(self, payload):
+        agency_name = str((payload or {}).get("agency_name") or "").strip()
+        contact = str((payload or {}).get("contact") or "").strip()
+        notes = str((payload or {}).get("notes") or "").strip()
+        status = _normalize_lead_status((payload or {}).get("status"))
+        if not agency_name:
+            raise ValueError("Agency name is required.")
+        if not contact:
+            raise ValueError("Contact is required.")
+
+        now = datetime.now(timezone.utc).isoformat()
+        lead = {
+            "id": uuid.uuid4().hex,
+            "created_at": now,
+            "updated_at": now,
+            "agency_name": agency_name,
+            "contact": contact,
+            "status": status,
+            "notes": notes,
+        }
+        self.ensure_initialized()
+        with self.license_store.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO leads (
+                    id,
+                    created_at,
+                    updated_at,
+                    agency_name,
+                    contact,
+                    status,
+                    notes
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    lead["id"],
+                    lead["created_at"],
+                    lead["updated_at"],
+                    lead["agency_name"],
+                    lead["contact"],
+                    lead["status"],
+                    lead["notes"],
+                ),
+            )
+            connection.commit()
+        return lead
+
+
 def _stripe_signature_parts(signature_header):
     parts = {}
     for item in str(signature_header or "").split(","):
@@ -1907,8 +2001,10 @@ def create_app():
     license_store = LicenseStore()
     audit_store = AuditReportStore(license_store)
     business_settings_store = BusinessSettingsStore(license_store)
+    lead_store = LeadStore(license_store)
     startup_security_scan = run_startup_validation(license_store=license_store)
     business_settings_store.ensure_initialized()
+    lead_store.ensure_initialized()
     app.config["COMPLIANCE_HEALTH"] = startup_security_scan
 
     @app.before_request
@@ -2040,6 +2136,37 @@ def create_app():
             return jsonify({"error": str(exc)}), 400
 
         return jsonify({"ok": True, "settings": settings})
+
+    @app.get("/admin/leads")
+    def admin_leads():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Lead tracker access is restricted."}), 403
+        return jsonify({"ok": True, "statuses": LEAD_STATUSES, "leads": lead_store.list_leads()})
+
+    @app.post("/admin/leads/add")
+    def admin_add_lead():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Lead tracker access is restricted."}), 403
+        payload = request.get_json(silent=True) or {}
+        try:
+            lead = lead_store.add_lead(payload)
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+        log_event(logging.INFO, "lead_added", status=lead["status"])
+        return jsonify({"ok": True, "lead": lead, "leads": lead_store.list_leads()}), 201
+
+    @app.post("/admin/demo-key")
+    def admin_generate_demo_key():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Demo key generation is restricted."}), 403
+        payload = request.get_json(silent=True) or {}
+        try:
+            hours = int(payload.get("hours", 48))
+        except (TypeError, ValueError):
+            hours = 48
+        demo_key = license_store.create_demo_key(hours=hours)
+        log_event(logging.INFO, "demo_key_generated", duration_hours=demo_key["duration_hours"])
+        return jsonify({"ok": True, "demo_key": demo_key}), 201
 
     @app.get("/admin/compliance-health")
     def admin_compliance_health():

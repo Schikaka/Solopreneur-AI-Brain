@@ -30,6 +30,12 @@ part in seconds. Can I send you a 60-second demo?"
 - Phase 2: submit to AI tool directories such as TheresAnAIForThat and
   FutureTools.
 - Phase 3: direct outreach to boutique agencies with 5-10 employees on LinkedIn.
+- Phase 4: run the Demo-based Closing motion:
+  1. Add qualified agencies to the private Sales & Leads tracker.
+  2. Send the Loss Aversion or Strategic Alliance outreach angle.
+  3. Issue a 48-hour demo key only after a reply or clear buying signal.
+  4. Ask prospects to test one real monthly CSV export.
+  5. Convert active demo users into the Stripe Payment Link offer before expiry.
 
 ## 5. Feature Moat
 

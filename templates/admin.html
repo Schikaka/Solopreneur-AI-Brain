@@ -41,7 +41,9 @@
       }
 
       button,
-      input {
+      input,
+      select,
+      textarea {
         font: inherit;
       }
 
@@ -169,7 +171,7 @@
 
       .settings-tabs {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 6px;
         padding: 16px 16px 0;
       }
@@ -312,6 +314,20 @@
         border-color: var(--blue);
         box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
         outline: none;
+      }
+
+      textarea.license-input {
+        min-height: 88px;
+        resize: vertical;
+      }
+
+      select.license-input {
+        appearance: none;
+        background-image: linear-gradient(45deg, transparent 50%, var(--slate) 50%), linear-gradient(135deg, var(--slate) 50%, transparent 50%);
+        background-position: calc(100% - 18px) 18px, calc(100% - 12px) 18px;
+        background-size: 6px 6px, 6px 6px;
+        background-repeat: no-repeat;
+        padding-right: 32px;
       }
 
       .icon-button {
@@ -588,6 +604,90 @@
         text-align: center;
       }
 
+      .sales-grid {
+        display: grid;
+        gap: 16px;
+      }
+
+      .demo-key-panel {
+        display: grid;
+        gap: 10px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .demo-key-output {
+        min-height: 42px;
+        display: flex;
+        align-items: center;
+        padding: 9px 10px;
+        border: 1px dashed #94a3b8;
+        border-radius: 8px;
+        background: white;
+        color: var(--text);
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 13px;
+        overflow-wrap: anywhere;
+      }
+
+      .lead-form {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .lead-form .field.notes {
+        grid-column: 1 / -1;
+      }
+
+      .lead-table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+      }
+
+      .lead-table {
+        width: 100%;
+        min-width: 680px;
+        border-collapse: collapse;
+        background: white;
+      }
+
+      .lead-table th,
+      .lead-table td {
+        padding: 11px 12px;
+        border-bottom: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .lead-table th {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        background: #f8fafc;
+      }
+
+      .lead-table tr:last-child td {
+        border-bottom: 0;
+      }
+
+      .lead-status {
+        display: inline-flex;
+        min-height: 26px;
+        align-items: center;
+        padding: 0 8px;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
       @media (max-width: 760px) {
         .shell {
           width: min(100% - 20px, 980px);
@@ -606,7 +706,8 @@
         }
 
         .settings-tabs,
-        .audit-entry {
+        .audit-entry,
+        .lead-form {
           grid-template-columns: 1fr;
         }
 
@@ -643,6 +744,7 @@
             <button class="settings-tab" id="branding-tab" type="button" role="tab" aria-selected="true" aria-controls="branding-panel">Branding</button>
             <button class="settings-tab" id="access-tab" type="button" role="tab" aria-selected="false" aria-controls="access-panel">Access</button>
             <button class="settings-tab" id="payment-tab" type="button" role="tab" aria-selected="false" aria-controls="payment-panel">Payment</button>
+            <button class="settings-tab" id="sales-tab" type="button" role="tab" aria-selected="false" aria-controls="sales-panel">Sales & Leads</button>
             <button class="settings-tab" id="audit-tab" type="button" role="tab" aria-selected="false" aria-controls="audit-panel">Audit</button>
           </div>
 
@@ -697,6 +799,69 @@
             <div class="admin-status" id="payment-status" role="status" aria-live="polite"></div>
           </div>
 
+          <div class="settings-panel" id="sales-panel" role="tabpanel" aria-labelledby="sales-tab" hidden>
+            <div class="sales-grid">
+              <section class="demo-key-panel" aria-label="Temporary demo key generation">
+                <h2>Demo Access</h2>
+                <p class="field-note">Generate a 48-hour demo key for a qualified prospect. The key is stored hashed and expires automatically.</p>
+                <div class="actions">
+                  <button class="button" id="generate-demo-key" type="button">Generate 48h Demo Key</button>
+                  <button class="button secondary" id="copy-demo-key" type="button">Copy Key</button>
+                </div>
+                <div class="demo-key-output" id="demo-key-output" aria-live="polite">No demo key generated yet.</div>
+                <div class="admin-status" id="demo-key-status" role="status" aria-live="polite"></div>
+              </section>
+
+              <section aria-label="Lead tracker">
+                <div class="audit-panel-head">
+                  <h2>Lead Tracker</h2>
+                  <button class="button secondary" id="refresh-leads" type="button">Refresh</button>
+                </div>
+                <form class="lead-form" id="lead-form">
+                  <div class="field">
+                    <label for="lead-agency-name">Agency Name</label>
+                    <input class="license-input" id="lead-agency-name" name="agency_name" type="text" autocomplete="organization">
+                  </div>
+                  <div class="field">
+                    <label for="lead-contact">Contact</label>
+                    <input class="license-input" id="lead-contact" name="contact" type="text" autocomplete="name">
+                  </div>
+                  <div class="field">
+                    <label for="lead-status">Status</label>
+                    <select class="license-input" id="lead-status" name="status">
+                      <option>Pitched</option>
+                      <option>Replied</option>
+                      <option>Booked</option>
+                      <option>Closed</option>
+                    </select>
+                  </div>
+                  <div class="field notes">
+                    <label for="lead-notes">Notes</label>
+                    <textarea class="license-input" id="lead-notes" name="notes" placeholder="Pain point, offer angle, next step"></textarea>
+                  </div>
+                  <div class="actions">
+                    <button class="button" id="save-lead" type="submit">Add Lead</button>
+                  </div>
+                </form>
+                <div class="lead-table-wrap" id="lead-table-wrap" hidden>
+                  <table class="lead-table">
+                    <thead>
+                      <tr>
+                        <th>Agency Name</th>
+                        <th>Contact</th>
+                        <th>Status</th>
+                        <th>Notes</th>
+                      </tr>
+                    </thead>
+                    <tbody id="lead-table-body"></tbody>
+                  </table>
+                </div>
+                <div class="empty" id="lead-empty">No leads tracked yet.</div>
+                <div class="admin-status" id="lead-status-message" role="status" aria-live="polite"></div>
+              </section>
+            </div>
+          </div>
+
           <div class="settings-panel" id="audit-panel" role="tabpanel" aria-labelledby="audit-tab" hidden>
             <div class="audit-panel-head">
               <h2>Generated Reports</h2>
@@ -725,6 +890,10 @@
             <div class="status-row">
               <dt>Payment Link</dt>
               <dd id="payment-state">Checking</dd>
+            </div>
+            <div class="status-row">
+              <dt>Sales Pipeline</dt>
+              <dd id="lead-state">Checking</dd>
             </div>
             <div class="status-row">
               <dt>Audit</dt>
@@ -794,6 +963,21 @@
       const clearPaymentLinkButton = document.querySelector("#clear-payment-link");
       const paymentStatus = document.querySelector("#payment-status");
       const paymentState = document.querySelector("#payment-state");
+      const leadState = document.querySelector("#lead-state");
+      const leadForm = document.querySelector("#lead-form");
+      const leadAgencyName = document.querySelector("#lead-agency-name");
+      const leadContact = document.querySelector("#lead-contact");
+      const leadStatusSelect = document.querySelector("#lead-status");
+      const leadNotes = document.querySelector("#lead-notes");
+      const leadTableWrap = document.querySelector("#lead-table-wrap");
+      const leadTableBody = document.querySelector("#lead-table-body");
+      const leadEmpty = document.querySelector("#lead-empty");
+      const leadStatusMessage = document.querySelector("#lead-status-message");
+      const refreshLeadsButton = document.querySelector("#refresh-leads");
+      const generateDemoKeyButton = document.querySelector("#generate-demo-key");
+      const copyDemoKeyButton = document.querySelector("#copy-demo-key");
+      const demoKeyOutput = document.querySelector("#demo-key-output");
+      const demoKeyStatus = document.querySelector("#demo-key-status");
       const auditState = document.querySelector("#audit-state");
       const auditList = document.querySelector("#audit-list");
       const auditStatus = document.querySelector("#audit-status");
@@ -820,6 +1004,7 @@
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
       let stripePaymentLink = "";
       let historyDbPromise = null;
+      let lastDemoKey = "";
 
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
         "&": "&amp;",
@@ -905,6 +1090,113 @@
           setStatus(paymentStatus, error.message || "Payment link could not be saved.", "error");
         } finally {
           savePaymentLinkButton.disabled = false;
+        }
+      }
+
+      function renderLeads(leads = []) {
+        const safeLeads = Array.isArray(leads) ? leads : [];
+        leadTableWrap.hidden = safeLeads.length === 0;
+        leadEmpty.hidden = safeLeads.length > 0;
+        leadTableBody.innerHTML = safeLeads.map((lead) => `
+          <tr>
+            <td><strong>${escapeHtml(lead.agency_name || "")}</strong></td>
+            <td>${escapeHtml(lead.contact || "")}</td>
+            <td><span class="lead-status">${escapeHtml(lead.status || "Pitched")}</span></td>
+            <td>${escapeHtml(lead.notes || "")}</td>
+          </tr>
+        `).join("");
+        leadState.textContent = safeLeads.length ? `${safeLeads.length} lead${safeLeads.length === 1 ? "" : "s"}` : "No leads";
+        leadState.className = safeLeads.length ? "ready" : "pending";
+      }
+
+      async function refreshLeads() {
+        setStatus(leadStatusMessage, "Refreshing leads...");
+        try {
+          const response = await fetch("/api/leads");
+          const data = await response.json();
+          renderLeads(data.leads || []);
+          if (!response.ok || !data.ok) {
+            setStatus(leadStatusMessage, data.error || "Lead tracker is unavailable.", "error");
+            return data;
+          }
+          setStatus(leadStatusMessage, data.leads?.length ? "Lead tracker updated." : "");
+          return data;
+        } catch (error) {
+          renderLeads([]);
+          leadState.textContent = "Unavailable";
+          leadState.className = "error";
+          setStatus(leadStatusMessage, "Lead tracker is unavailable.", "error");
+          return null;
+        }
+      }
+
+      async function addLead() {
+        const payload = {
+          agency_name: leadAgencyName.value.trim(),
+          contact: leadContact.value.trim(),
+          status: leadStatusSelect.value,
+          notes: leadNotes.value.trim()
+        };
+        if (!payload.agency_name || !payload.contact) {
+          setStatus(leadStatusMessage, "Agency name and contact are required.", "error");
+          return;
+        }
+
+        setStatus(leadStatusMessage, "Saving lead...");
+        try {
+          const response = await fetch("/api/leads/add", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Lead could not be saved.");
+          }
+          leadForm.reset();
+          leadStatusSelect.value = "Pitched";
+          renderLeads(data.leads || []);
+          setStatus(leadStatusMessage, "Lead saved.", "success");
+        } catch (error) {
+          setStatus(leadStatusMessage, error.message || "Lead could not be saved.", "error");
+        }
+      }
+
+      async function generateDemoKey() {
+        generateDemoKeyButton.disabled = true;
+        setStatus(demoKeyStatus, "Generating 48-hour demo key...");
+        try {
+          const response = await fetch("/api/demo-key", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ hours: 48 })
+          });
+          const data = await response.json();
+          if (!response.ok || !data.ok) {
+            throw new Error(data.error || "Demo key could not be generated.");
+          }
+          lastDemoKey = data.demo_key?.license_key || "";
+          demoKeyOutput.textContent = lastDemoKey
+            ? `${lastDemoKey} - expires ${data.demo_key.expires_at}`
+            : "Demo key generated, but no key was returned.";
+          setStatus(demoKeyStatus, "48-hour demo key ready.", "success");
+        } catch (error) {
+          setStatus(demoKeyStatus, error.message || "Demo key could not be generated.", "error");
+        } finally {
+          generateDemoKeyButton.disabled = false;
+        }
+      }
+
+      async function copyDemoKey() {
+        if (!lastDemoKey) {
+          setStatus(demoKeyStatus, "Generate a demo key first.", "error");
+          return;
+        }
+        try {
+          await navigator.clipboard.writeText(lastDemoKey);
+          setStatus(demoKeyStatus, "Demo key copied.", "success");
+        } catch (error) {
+          setStatus(demoKeyStatus, "Demo key is ready to select and copy.", "error");
         }
       }
 
@@ -1189,6 +1481,9 @@
           settingsPanels.forEach((panel) => {
             panel.hidden = panel.id !== tab.getAttribute("aria-controls");
           });
+          if (tab.getAttribute("aria-controls") === "sales-panel") {
+            refreshLeads();
+          }
           if (tab.getAttribute("aria-controls") === "audit-panel") {
             refreshAuditList();
           }
@@ -1261,6 +1556,13 @@
         saveBusinessSettings("");
       });
 
+      leadForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        addLead();
+      });
+      refreshLeadsButton.addEventListener("click", () => refreshLeads());
+      generateDemoKeyButton.addEventListener("click", () => generateDemoKey());
+      copyDemoKeyButton.addEventListener("click", () => copyDemoKey());
       refreshAuditButton.addEventListener("click", () => refreshAuditList());
       refreshComplianceButton.addEventListener("click", () => refreshComplianceHealth());
       refreshSessionMonitorButton.addEventListener("click", () => refreshSessionMonitor());
@@ -1268,6 +1570,7 @@
       updateLogoPreview();
       updateSummary();
       loadBusinessSettings();
+      refreshLeads();
       refreshAuditList();
       refreshComplianceHealth();
       refreshSessionMonitor();

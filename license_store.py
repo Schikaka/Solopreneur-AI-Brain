@@ -2,8 +2,9 @@ import hashlib
 import hmac
 import importlib
 import os
+import secrets
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -68,6 +69,28 @@ def _device_fingerprint(device_id):
     if not normalized:
         return ""
     return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+
+
+def _utc_now():
+    return datetime.now(timezone.utc)
+
+
+def _parse_expires_at(value):
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    try:
+        parsed = datetime.fromisoformat(normalized.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone(timezone.utc)
+
+
+def _is_expired(expires_at):
+    parsed = _parse_expires_at(expires_at)
+    return bool(parsed and parsed <= _utc_now())
 
 
 def _seed_keys_from_env():
@@ -145,6 +168,7 @@ class LicenseStore:
                 "last_seen_user_agent": "TEXT",
                 "last_seen_path": "TEXT",
                 "use_count": "INTEGER NOT NULL DEFAULT 0",
+                "expires_at": "TEXT",
             }
             for column, definition in required_columns.items():
                 if column not in existing_columns:
@@ -165,7 +189,7 @@ class LicenseStore:
                 )
                 """
             )
-            created_at = datetime.now(timezone.utc).isoformat()
+            created_at = _utc_now().isoformat()
             for license_key in self.seed_keys:
                 connection.execute(
                     """
@@ -184,11 +208,46 @@ class LicenseStore:
         self.ensure_initialized()
         with self.connect() as connection:
             row = connection.execute(
-                "SELECT active FROM license_keys WHERE key_hash = ? LIMIT 1",
+                "SELECT active, expires_at FROM license_keys WHERE key_hash = ? LIMIT 1",
                 (_license_hash(normalized),),
             ).fetchone()
 
-        return bool(row and int(row[0]) == 1)
+        return bool(row and int(row[0]) == 1 and not _is_expired(row[1]))
+
+    def create_license_key(self, license_key, *, label="manual", expires_at=None):
+        normalized = str(license_key or "").strip()
+        if not normalized:
+            raise ValueError("License key is required.")
+
+        self.ensure_initialized()
+        created_at = _utc_now().isoformat()
+        with self.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO license_keys (key_hash, active, label, created_at, expires_at)
+                VALUES (?, 1, ?, ?, ?)
+                ON CONFLICT(key_hash) DO UPDATE SET
+                    active = 1,
+                    label = excluded.label,
+                    expires_at = excluded.expires_at
+                """,
+                (_license_hash(normalized), str(label or "manual"), created_at, expires_at),
+            )
+            connection.commit()
+        return {
+            "license_key": normalized,
+            "key_fingerprint": _license_hash(normalized)[:12],
+            "label": str(label or "manual"),
+            "expires_at": expires_at,
+        }
+
+    def create_demo_key(self, hours=48):
+        duration_hours = max(1, int(hours or 48))
+        raw_key = f"DEMO-{secrets.token_urlsafe(18).replace('-', '').replace('_', '')[:24].upper()}"
+        expires_at = (_utc_now() + timedelta(hours=duration_hours)).isoformat()
+        record = self.create_license_key(raw_key, label=f"{duration_hours}h-demo", expires_at=expires_at)
+        record["duration_hours"] = duration_hours
+        return record
 
     def _record_auth_alert(
         self,
@@ -221,7 +280,7 @@ class LicenseStore:
             """,
             (
                 uuid.uuid4().hex,
-                datetime.now(timezone.utc).isoformat(),
+                    _utc_now().isoformat(),
                 key_hash,
                 alert_type,
                 attempted_device_id,
@@ -258,7 +317,7 @@ class LicenseStore:
         with self.connect() as connection:
             row = connection.execute(
                 """
-                SELECT active, locked_device_id
+                SELECT active, locked_device_id, expires_at
                 FROM license_keys
                 WHERE key_hash = ?
                 LIMIT 1
@@ -268,6 +327,8 @@ class LicenseStore:
 
             if not row or int(row[0]) != 1:
                 return {"ok": False, "error": "Invalid license key.", "reason": "invalid_license"}
+            if _is_expired(row[2]):
+                return {"ok": False, "error": "License key has expired.", "reason": "expired_license"}
 
             locked_device_id = _normalize_device_id(row[1])
             if not hmac.compare_digest(expected_hmac, normalized_hmac):
@@ -285,7 +346,7 @@ class LicenseStore:
                 connection.commit()
                 return {"ok": False, "error": "Device identity could not be verified.", "reason": "invalid_device_hmac"}
 
-            now = datetime.now(timezone.utc).isoformat()
+            now = _utc_now().isoformat()
             if not locked_device_id:
                 connection.execute(
                     """

@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 from license_store import LicenseStore, device_hmac
 
 
@@ -61,3 +63,26 @@ def test_license_store_locks_first_device_and_flags_second(tmp_path):
     assert monitor["active_device_count"] == 1
     assert monitor["alert_count"] == 1
     assert monitor["alerts"][0]["alert_type"] == "hardware_lock_violation"
+
+
+def test_demo_license_keys_expire(tmp_path):
+    store = LicenseStore(
+        db_path=tmp_path / "database.db",
+        encryption_key="test-database-key",
+        seed_keys=[],
+        require_sqlcipher=False,
+    )
+    active_demo = store.create_demo_key(hours=48)
+    expired_key = "EXPIRED-DEMO-KEY"
+    expired_at = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+    store.create_license_key(expired_key, label="expired-demo", expires_at=expired_at)
+
+    assert active_demo["license_key"].startswith("DEMO-")
+    assert active_demo["duration_hours"] == 48
+    assert store.is_valid(active_demo["license_key"]) is True
+    assert store.is_valid(expired_key) is False
+    assert store.validate_device_lock(
+        expired_key,
+        "a" * 64,
+        device_hmac(expired_key, "a" * 64),
+    )["reason"] == "expired_license"

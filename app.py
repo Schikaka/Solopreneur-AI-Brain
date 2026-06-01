@@ -203,6 +203,57 @@ def create_app(test_config=None):
         except Exception:
             return jsonify({"error": "Business settings could not be saved."}), 503
 
+    @app.get("/api/leads")
+    def leads():
+        try:
+            response = requests.get(f"{_gatekeeper_url()}/admin/leads", timeout=1.5)
+            response.raise_for_status()
+            return jsonify(response.json())
+        except Exception:
+            return jsonify({"ok": False, "leads": [], "error": "Lead tracker is unavailable."}), 503
+
+    @app.post("/api/leads/add")
+    def add_lead():
+        payload = request.get_json(silent=True) or {}
+        try:
+            response = requests.post(
+                f"{_gatekeeper_url()}/admin/leads/add",
+                json={
+                    "agency_name": str(payload.get("agency_name", "")).strip(),
+                    "contact": str(payload.get("contact", "")).strip(),
+                    "status": str(payload.get("status", "")).strip(),
+                    "notes": str(payload.get("notes", "")).strip(),
+                },
+                timeout=1.5,
+            )
+            response.raise_for_status()
+            return jsonify(response.json()), response.status_code
+        except requests.HTTPError:
+            error_payload = {}
+            try:
+                error_payload = response.json()
+            except Exception:
+                error_payload = {"error": "Lead could not be saved."}
+            return jsonify(error_payload), response.status_code
+        except Exception:
+            return jsonify({"error": "Lead could not be saved."}), 503
+
+    @app.post("/api/demo-key")
+    def demo_key():
+        try:
+            response = requests.post(f"{_gatekeeper_url()}/admin/demo-key", json={"hours": 48}, timeout=1.5)
+            response.raise_for_status()
+            return jsonify(response.json()), response.status_code
+        except requests.HTTPError:
+            error_payload = {}
+            try:
+                error_payload = response.json()
+            except Exception:
+                error_payload = {"error": "Demo key could not be generated."}
+            return jsonify(error_payload), response.status_code
+        except Exception:
+            return jsonify({"error": "Demo key could not be generated."}), 503
+
     @app.post("/api/check-updates")
     def check_updates():
         payload = {"current_version": app.config["APP_VERSION"]}

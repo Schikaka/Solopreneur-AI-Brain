@@ -268,6 +268,39 @@ def test_business_settings_store_stripe_payment_link():
     assert "https" in invalid_response.get_json()["error"]
 
 
+def test_lead_tracker_and_demo_key_generation():
+    client = create_app().test_client()
+    lead_response = client.post(
+        "/admin/leads/add",
+        json={
+            "agency_name": "Northstar Media",
+            "contact": "owner@example.com",
+            "status": "Replied",
+            "notes": "Interested in a 48-hour demo.",
+        },
+    )
+    leads_response = client.get("/admin/leads")
+    demo_response = client.post("/admin/demo-key", json={"hours": 48})
+    demo_key = demo_response.get_json()["demo_key"]["license_key"]
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+    generation_response = post_signed(client, demo_key, stats)
+
+    assert lead_response.status_code == 201
+    assert lead_response.get_json()["lead"]["status"] == "Replied"
+    assert leads_response.status_code == 200
+    assert leads_response.get_json()["leads"][0]["agency_name"] == "Northstar Media"
+    assert demo_response.status_code == 201
+    assert demo_key.startswith("DEMO-")
+    assert demo_response.get_json()["demo_key"]["duration_hours"] == 48
+    assert generation_response.status_code == 200
+
+
 def test_stripe_webhook_requires_valid_signature(monkeypatch):
     monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
     client = create_app().test_client()

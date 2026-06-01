@@ -73,6 +73,15 @@ def test_admin_page(client):
     assert b"Active Devices" in response.data
     assert b"Flagged Keys" in response.data
     assert b"/api/session-monitor" in response.data
+    assert b"Sales & Leads" in response.data
+    assert b"Generate 48h Demo Key" in response.data
+    assert b"Agency Name" in response.data
+    assert b"Pitched" in response.data
+    assert b"Replied" in response.data
+    assert b"Booked" in response.data
+    assert b"Closed" in response.data
+    assert b"/api/leads/add" in response.data
+    assert b"/api/demo-key" in response.data
 
 
 def test_index_has_nonce_csp(client):
@@ -229,6 +238,84 @@ def test_session_monitor_proxy(client, monkeypatch):
     assert payload["alerts"][0]["alert_type"] == "hardware_lock_violation"
 
 
+def test_sales_leads_and_demo_key_proxies(client, monkeypatch):
+    class GetResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "ok": True,
+                "leads": [
+                    {
+                        "agency_name": "Northstar Media",
+                        "contact": "owner@example.com",
+                        "status": "Pitched",
+                        "notes": "Send demo",
+                    }
+                ],
+            }
+
+    class PostResponse:
+        status_code = 201
+
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    def get(url, timeout):
+        assert url == "http://gatekeeper.test/admin/leads"
+        assert timeout == 1.5
+        return GetResponse()
+
+    def post(url, json, timeout):
+        assert timeout == 1.5
+        if url == "http://gatekeeper.test/admin/leads/add":
+            assert json["agency_name"] == "Northstar Media"
+            return PostResponse({"ok": True, "lead": json, "leads": [json]})
+        if url == "http://gatekeeper.test/admin/demo-key":
+            assert json == {"hours": 48}
+            return PostResponse(
+                {
+                    "ok": True,
+                    "demo_key": {
+                        "license_key": "DEMO-ABC",
+                        "expires_at": "2026-06-03T00:00:00+00:00",
+                        "duration_hours": 48,
+                    },
+                }
+            )
+        raise AssertionError(url)
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.get", get)
+    monkeypatch.setattr("app.requests.post", post)
+
+    leads_response = client.get("/api/leads")
+    add_response = client.post(
+        "/api/leads/add",
+        json={
+            "agency_name": "Northstar Media",
+            "contact": "owner@example.com",
+            "status": "Pitched",
+            "notes": "Send demo",
+        },
+    )
+    demo_response = client.post("/api/demo-key")
+
+    assert leads_response.status_code == 200
+    assert leads_response.get_json()["leads"][0]["agency_name"] == "Northstar Media"
+    assert add_response.status_code == 201
+    assert add_response.get_json()["lead"]["status"] == "Pitched"
+    assert demo_response.status_code == 201
+    assert demo_response.get_json()["demo_key"]["duration_hours"] == 48
+
+
 def test_business_settings_proxy_get_and_post(client, monkeypatch):
     class GetResponse:
         def raise_for_status(self):
@@ -321,14 +408,20 @@ def test_launch_assets_exist():
     root = Path(__file__).resolve().parents[1]
     launch_assets = root / "logic" / "launch_assets.md"
     landing_prompt = root / "landing_page_prompt.txt"
+    business_plan = root / "BUSINESS_PLAN.md"
 
     assert (root / "launch_assets" / "linkedin_scripts.md").exists()
     assert (root / "launch_assets" / "twitter_hooks.md").exists()
     assert (root / "launch_assets" / "demo_script.md").exists()
+    assert (root / "launch_assets" / "refined_scripts.md").exists()
     assert "Elite AGENCY Hook" in launch_assets.read_text()
     assert "Privacy-First" in launch_assets.read_text()
     assert "60-Second Demo Script" in launch_assets.read_text()
     assert "Emergent App Builder" in landing_prompt.read_text()
+    assert "Demo-based Closing" in business_plan.read_text()
+    refined_scripts = (root / "launch_assets" / "refined_scripts.md").read_text()
+    assert "Loss Aversion Pitch" in refined_scripts
+    assert "Strategic Alliance Pitch" in refined_scripts
 
 
 def test_sample_report(client):

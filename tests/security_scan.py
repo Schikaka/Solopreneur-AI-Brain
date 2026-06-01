@@ -195,6 +195,21 @@ def scan_static_controls(base_dir):
             "required": ("Session Monitor", "refreshSessionMonitor", "/api/session-monitor"),
         },
         {
+            "name": "Sales lead tracker",
+            "path": "gatekeeper_server.py",
+            "required": ("CREATE TABLE IF NOT EXISTS leads", "/admin/leads/add", "LeadStore", "LEAD_STATUSES"),
+        },
+        {
+            "name": "Demo key expiry",
+            "path": "license_store.py",
+            "required": ("expires_at", "create_demo_key", "timedelta(hours=duration_hours)", "expired_license"),
+        },
+        {
+            "name": "Admin sales interface",
+            "path": "templates/admin.html",
+            "required": ("Sales & Leads", "Generate 48h Demo Key", "/api/leads/add", "/api/demo-key"),
+        },
+        {
             "name": "Production Gatekeeper URL sync",
             "path": "narrative_logic.py",
             "required": ("GATEKEEPER_PUBLIC_URL", "DEFAULT_GATEKEEPER_URL", "GATEKEEPER_URL"),
