@@ -6,8 +6,8 @@ from app import create_app
 
 
 @pytest.fixture
-def client(tmp_path):
-    app = create_app({"TESTING": True, "UPLOAD_DIR": tmp_path / "uploads"})
+def client():
+    app = create_app({"TESTING": True})
     return app.test_client()
 
 
@@ -56,6 +56,13 @@ def test_index_has_nonce_csp(client):
     assert "https://cdn.tailwindcss.com" in csp
     assert "https://cdnjs.cloudflare.com" in csp
     assert b'<script nonce="' in response.data
+    assert b"Past Reports" in response.data
+    assert b"indexedDB.open" in response.data
+    assert b"Privacy & Security" in response.data
+
+
+def test_app_has_no_upload_dir_config(client):
+    assert "UPLOAD_DIR" not in client.application.config
 
 
 def test_sample_report(client):
@@ -102,6 +109,38 @@ def test_upload_rejects_non_csv(client):
 
     assert response.status_code == 400
     assert response.get_json()["error"] == "Only CSV files are supported."
+
+
+def test_upload_processes_csv_in_memory(client, monkeypatch):
+    csv_bytes = (
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Search,100,50,1000,5,300\n"
+    )
+    captured = {}
+
+    def fake_analyze_data(source, license_key):
+        captured["source"] = source
+        captured["payload"] = source.getvalue()
+        captured["license_key"] = license_key
+        return {
+            "stats": {"total_revenue": 300, "total_spend": 100, "avg_roas": 3, "total_conversions": 5},
+            "insights": [],
+            "daily_trends": [],
+            "narrative": "In-memory report",
+        }
+
+    monkeypatch.setattr("app.analyze_data", fake_analyze_data)
+
+    response = client.post(
+        "/api/analyze",
+        data={"file": (BytesIO(csv_bytes), "report.csv"), "license_key": "DEMO123"},
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert isinstance(captured["source"], BytesIO)
+    assert captured["payload"] == csv_bytes
+    assert captured["license_key"] == "DEMO123"
 
 
 def test_upload_valid_csv(client):

@@ -155,6 +155,88 @@
         line-height: 1.55;
       }
 
+      .sidebar-tabs {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+        margin-bottom: 18px;
+        padding: 4px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #eef2f7;
+      }
+
+      .sidebar-tab {
+        min-height: 36px;
+        border: 0;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .sidebar-tab.is-active {
+        background: white;
+        color: var(--text);
+        box-shadow: 0 1px 4px rgba(20, 32, 55, 0.1);
+      }
+
+      .sidebar-tab-panel[hidden] {
+        display: none;
+      }
+
+      .history-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 14px;
+      }
+
+      .history-list {
+        display: grid;
+        gap: 10px;
+        margin-top: 14px;
+      }
+
+      .history-entry {
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .history-entry strong,
+      .history-entry span {
+        display: block;
+      }
+
+      .history-entry strong {
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      .history-entry span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .history-entry-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .history-entry-actions .copy-button {
+        min-height: 32px;
+        padding: 0 10px;
+      }
+
       .upload-box {
         margin-top: 22px;
         padding: 14px;
@@ -471,6 +553,87 @@
         overflow-wrap: anywhere;
       }
 
+      .privacy-footer {
+        width: min(1180px, calc(100% - 32px));
+        margin: 0 auto 28px;
+      }
+
+      .privacy-badge {
+        min-height: 36px;
+        padding: 0 13px;
+        border: 1px solid #bbf7d0;
+        border-radius: 999px;
+        background: #f0fdf4;
+        color: #166534;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .privacy-badge:hover {
+        border-color: #86efac;
+        background: #dcfce7;
+      }
+
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 20;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+        background: rgba(15, 23, 42, 0.45);
+      }
+
+      .modal-backdrop[hidden] {
+        display: none;
+      }
+
+      .privacy-modal {
+        width: min(540px, 100%);
+        padding: 22px;
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.24);
+      }
+
+      .privacy-modal header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .privacy-modal h2 {
+        margin: 0;
+        font-size: 21px;
+      }
+
+      .privacy-modal p,
+      .privacy-modal li {
+        color: var(--muted);
+        line-height: 1.55;
+      }
+
+      .privacy-modal ul {
+        margin: 14px 0 0;
+        padding-left: 20px;
+      }
+
+      .modal-close {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--slate);
+        cursor: pointer;
+        font-size: 20px;
+        line-height: 1;
+      }
+
       @media (max-width: 900px) {
         .workspace {
           grid-template-columns: 1fr;
@@ -532,25 +695,43 @@
 
       <div class="workspace">
         <aside class="panel">
-          <h1>Client report narrative builder</h1>
-          <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
-          <form class="upload-box" id="upload-form">
-            <label for="csv-file">Marketing CSV</label>
-            <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
-            <div class="security-note">
-              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
-                <rect x="4" y="10" width="16" height="10" rx="2"></rect>
-                <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
-              </svg>
-              <span>Data is processed securely and not stored.</span>
+          <div class="sidebar-tabs" role="tablist" aria-label="Report workspace">
+            <button class="sidebar-tab is-active" id="builder-tab" type="button" role="tab" aria-selected="true" aria-controls="builder-panel" data-sidebar-tab="builder">Builder</button>
+            <button class="sidebar-tab" id="history-tab" type="button" role="tab" aria-selected="false" aria-controls="history-panel" data-sidebar-tab="history">Past Reports</button>
+          </div>
+
+          <div class="sidebar-tab-panel" id="builder-panel" role="tabpanel" aria-labelledby="builder-tab">
+            <h1>Client report narrative builder</h1>
+            <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
+            <form class="upload-box" id="upload-form">
+              <label for="csv-file">Marketing CSV</label>
+              <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
+              <div class="security-note">
+                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="4" y="10" width="16" height="10" rx="2"></rect>
+                  <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
+                </svg>
+                <span>CSV data is processed in memory and never stored on the server.</span>
+              </div>
+              <div class="actions">
+                <button class="button" id="analyze-button" type="submit">Analyze CSV</button>
+                <button class="button secondary" id="sample-button" type="button">Use Sample</button>
+              </div>
+              <div class="form-status" id="form-status" role="status" aria-live="polite"></div>
+              <div class="error" id="error" role="alert"></div>
+            </form>
+          </div>
+
+          <div class="sidebar-tab-panel" id="history-panel" role="tabpanel" aria-labelledby="history-tab" hidden>
+            <h2>Past Reports</h2>
+            <p>Saved reports stay inside this browser's Local History Vault.</p>
+            <div class="history-actions">
+              <button class="copy-button" id="refresh-history" type="button">Refresh</button>
+              <button class="copy-button" id="clear-history" type="button">Clear Vault</button>
             </div>
-            <div class="actions">
-              <button class="button" id="analyze-button" type="submit">Analyze CSV</button>
-              <button class="button secondary" id="sample-button" type="button">Use Sample</button>
-            </div>
-            <div class="form-status" id="form-status" role="status" aria-live="polite"></div>
-            <div class="error" id="error" role="alert"></div>
-          </form>
+            <div class="form-status" id="history-status" role="status" aria-live="polite"></div>
+            <div class="history-list" id="history-list"></div>
+          </div>
         </aside>
 
         <section class="report" id="report">
@@ -558,6 +739,26 @@
         </section>
       </div>
     </main>
+
+    <footer class="privacy-footer">
+      <button class="privacy-badge" id="privacy-open" type="button">Privacy & Security</button>
+    </footer>
+
+    <div class="modal-backdrop" id="privacy-modal" hidden>
+      <section class="privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
+        <header>
+          <h2 id="privacy-title">Privacy & Security</h2>
+          <button class="modal-close" id="privacy-close" type="button" aria-label="Close privacy details">&times;</button>
+        </header>
+        <p>NarrativeAI uses a zero-retention upload flow for client CSVs.</p>
+        <ul>
+          <li>Uploaded CSVs are read from the request stream into RAM and are never written to an uploads folder.</li>
+          <li>The server returns the generated report, then drops the in-memory CSV bytes after the request finishes.</li>
+          <li>The Local History Vault uses IndexedDB, so saved reports remain on this browser and machine.</li>
+          <li>Only derived report stats and narrative output are saved locally; raw CSV files are not saved.</li>
+        </ul>
+      </section>
+    </div>
 
     <script nonce="{{ csp_nonce }}" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script nonce="{{ csp_nonce }}">
@@ -567,13 +768,28 @@
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
       const statusBox = document.querySelector("#form-status");
+      const sidebarTabButtons = document.querySelectorAll("[data-sidebar-tab]");
+      const builderPanel = document.querySelector("#builder-panel");
+      const historyPanel = document.querySelector("#history-panel");
+      const historyList = document.querySelector("#history-list");
+      const historyStatus = document.querySelector("#history-status");
+      const refreshHistoryButton = document.querySelector("#refresh-history");
+      const clearHistoryButton = document.querySelector("#clear-history");
+      const privacyOpenButton = document.querySelector("#privacy-open");
+      const privacyCloseButton = document.querySelector("#privacy-close");
+      const privacyModal = document.querySelector("#privacy-modal");
       const logoStorageKey = "narrativeai.agencyLogo";
       const licenseStorageKey = "narrativeai.licenseKey";
       const sampleReportCacheKey = "narrativeai.sampleReport";
       const sampleReportCacheTtlMs = 6 * 60 * 60 * 1000;
+      const historyDbName = "narrativeai.localHistoryVault";
+      const historyDbVersion = 1;
+      const historyStoreName = "reports";
+      const historyVaultLimit = 30;
       let latestNarrative = "";
       let currentReportData = null;
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
+      let historyDbPromise = null;
 
       const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
       const reportDate = () => new Date().toLocaleDateString(undefined, {
@@ -624,6 +840,197 @@
           }));
         } catch (error) {
           sessionStorage.removeItem(sampleReportCacheKey);
+        }
+      }
+
+      function setHistoryStatus(message = "", type = "") {
+        historyStatus.className = type ? `form-status ${type}` : "form-status";
+        historyStatus.textContent = message;
+      }
+
+      function openHistoryVault() {
+        if (!("indexedDB" in window)) {
+          return Promise.reject(new Error("Local History Vault is unavailable in this browser."));
+        }
+
+        if (historyDbPromise) {
+          return historyDbPromise;
+        }
+
+        historyDbPromise = new Promise((resolve, reject) => {
+          const request = indexedDB.open(historyDbName, historyDbVersion);
+
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(historyStoreName)) {
+              const store = db.createObjectStore(historyStoreName, { keyPath: "id" });
+              store.createIndex("createdAt", "createdAt", { unique: false });
+            }
+          };
+
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => {
+            historyDbPromise = null;
+            reject(request.error || new Error("Local History Vault could not be opened."));
+          };
+        });
+
+        return historyDbPromise;
+      }
+
+      function transactionDone(transaction) {
+        return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error("Local History Vault transaction failed."));
+          transaction.onabort = () => reject(transaction.error || new Error("Local History Vault transaction was aborted."));
+        });
+      }
+
+      function requestResult(request) {
+        return new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("Local History Vault request failed."));
+        });
+      }
+
+      function vaultId() {
+        if (window.crypto?.randomUUID) {
+          return window.crypto.randomUUID();
+        }
+        return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+      }
+
+      function reportHistoryTitle(record) {
+        return record?.report?.stats?.top_campaign || record?.stats?.top_campaign || "Marketing report";
+      }
+
+      function reportHistoryDate(record) {
+        try {
+          const savedAt = new Date(record.createdAt);
+          if (Number.isNaN(savedAt.getTime())) {
+            return "Saved report";
+          }
+          return savedAt.toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+        } catch (error) {
+          return "Saved report";
+        }
+      }
+
+      async function readHistoryReports() {
+        const db = await openHistoryVault();
+        const transaction = db.transaction(historyStoreName, "readonly");
+        const request = transaction.objectStore(historyStoreName).getAll();
+        const records = await requestResult(request);
+        await transactionDone(transaction);
+        return records.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      }
+
+      async function putHistoryReport(record) {
+        const db = await openHistoryVault();
+        const transaction = db.transaction(historyStoreName, "readwrite");
+        transaction.objectStore(historyStoreName).put(record);
+        await transactionDone(transaction);
+      }
+
+      async function deleteHistoryReport(id) {
+        const db = await openHistoryVault();
+        const transaction = db.transaction(historyStoreName, "readwrite");
+        transaction.objectStore(historyStoreName).delete(id);
+        await transactionDone(transaction);
+      }
+
+      async function clearHistoryReports() {
+        const db = await openHistoryVault();
+        const transaction = db.transaction(historyStoreName, "readwrite");
+        transaction.objectStore(historyStoreName).clear();
+        await transactionDone(transaction);
+      }
+
+      async function pruneHistoryVault() {
+        const records = await readHistoryReports();
+        const overflow = records.slice(historyVaultLimit);
+        await Promise.all(overflow.map((record) => deleteHistoryReport(record.id)));
+      }
+
+      function renderHistoryList(records = []) {
+        if (!records.length) {
+          historyList.innerHTML = '<div class="empty">No saved reports yet.</div>';
+          return;
+        }
+
+        historyList.innerHTML = records.map((record) => `
+          <article class="history-entry">
+            <strong>${escapeHtml(reportHistoryTitle(record))}</strong>
+            <span>${escapeHtml(reportHistoryDate(record))} - ${escapeHtml(record.sourceLabel || "Local report")}</span>
+            <span>${money(record.report?.stats?.total_revenue || record.stats?.total_revenue || 0)} secured return - ${(record.report?.stats?.avg_roas || record.stats?.avg_roas || 0)}x ROAS</span>
+            <div class="history-entry-actions">
+              <button class="copy-button" type="button" data-history-open="${escapeHtml(record.id)}">View</button>
+              <button class="copy-button" type="button" data-history-delete="${escapeHtml(record.id)}">Delete</button>
+            </div>
+          </article>
+        `).join("");
+      }
+
+      async function refreshHistoryList() {
+        try {
+          const records = await readHistoryReports();
+          renderHistoryList(records);
+          setHistoryStatus(records.length ? `${records.length} report${records.length === 1 ? "" : "s"} saved locally.` : "");
+          return records;
+        } catch (error) {
+          historyList.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+          setHistoryStatus(error.message);
+          return [];
+        }
+      }
+
+      async function saveReportToHistory(data, sourceLabel) {
+        if (!data?.stats || !data?.narrative) {
+          return;
+        }
+
+        const record = {
+          id: vaultId(),
+          createdAt: new Date().toISOString(),
+          sourceLabel,
+          report: {
+            stats: data.stats,
+            narrative: data.narrative,
+            insights: data.insights || [],
+            top_daily_insights: data.top_daily_insights || [],
+            daily_trends: data.daily_trends || []
+          }
+        };
+
+        try {
+          await putHistoryReport(record);
+          await pruneHistoryVault();
+          await refreshHistoryList();
+          setHistoryStatus("Saved to Local History Vault.", "success");
+          return true;
+        } catch (error) {
+          setHistoryStatus(error.message);
+          return false;
+        }
+      }
+
+      function showSidebarTab(tabName) {
+        const showHistory = tabName === "history";
+        builderPanel.hidden = showHistory;
+        historyPanel.hidden = !showHistory;
+        sidebarTabButtons.forEach((button) => {
+          const isActive = button.dataset.sidebarTab === tabName;
+          button.classList.toggle("is-active", isActive);
+          button.setAttribute("aria-selected", String(isActive));
+        });
+
+        if (showHistory) {
+          refreshHistoryList();
         }
       }
 
@@ -904,7 +1311,9 @@
 
       function renderReport(data, sourceLabel = "Sample data loaded") {
         const stats = data.stats;
-        const maxRevenue = Math.max(...data.daily_trends.map((day) => day.revenue), 1);
+        const insights = Array.isArray(data.insights) ? data.insights : [];
+        const dailyTrends = Array.isArray(data.daily_trends) ? data.daily_trends : [];
+        const maxRevenue = Math.max(...dailyTrends.map((day) => day.revenue), 1);
         currentReportData = data;
         latestNarrative = data.narrative || "";
 
@@ -925,38 +1334,38 @@
             ${metric("Revenue", money(stats.total_revenue))}
             ${metric("Spend", money(stats.total_spend))}
             ${metric("Avg ROAS", `${stats.avg_roas}x`)}
-            ${metric("Conversions", stats.total_conversions.toLocaleString())}
+            ${metric("Conversions", Number(stats.total_conversions || 0).toLocaleString())}
           </div>
 
           <section class="section">
             <div class="section-head">
               <h2>Insights</h2>
-              <small>${escapeHtml(stats.top_campaign)}</small>
+              <small>${escapeHtml(stats.top_campaign || "Local report")}</small>
             </div>
             <div class="insights" id="insights-container">
-              ${data.insights.map((insight) => `
+              ${insights.length ? insights.map((insight) => `
                 <article class="insight">
                   <b>${escapeHtml(insight.title)}</b>
                   <strong>${escapeHtml(insight.value)}</strong>
                   <p>${escapeHtml(insight.detail)}</p>
                 </article>
-              `).join("")}
+              `).join("") : '<div class="empty">No insight cards were saved for this local report.</div>'}
             </div>
           </section>
 
           <section class="section">
             <div class="section-head">
               <h2>Daily Revenue</h2>
-              <small>${data.daily_trends.length} reporting days</small>
+              <small>${dailyTrends.length} reporting days</small>
             </div>
             <div class="chart">
-              ${data.daily_trends.map((day) => `
+              ${dailyTrends.length ? dailyTrends.map((day) => `
                 <div class="bar-row">
                   <span>${escapeHtml(day.date.slice(5))}</span>
                   <div class="bar-track"><div class="bar" style="width: ${(day.revenue / maxRevenue) * 100}%"></div></div>
                   <strong>${money(day.revenue)}</strong>
                 </div>
-              `).join("")}
+              `).join("") : '<div class="empty">No daily trend bars were saved for this local report.</div>'}
             </div>
           </section>
 
@@ -987,6 +1396,7 @@
 
       async function loadSample(options = {}) {
         const forceRefresh = options.forceRefresh || false;
+        const saveToVault = options.saveToVault || false;
         if (!forceRefresh && renderCachedSampleReport()) {
           return;
         }
@@ -1002,8 +1412,12 @@
           }
           writeSampleReportCache(data);
           renderReport(data, "Sample data loaded");
+          let savedToVault = false;
+          if (saveToVault) {
+            savedToVault = await saveReportToHistory(data, "Sample data loaded");
+          }
           statusBox.className = "form-status success";
-          statusBox.textContent = "Sample report loaded.";
+          statusBox.textContent = saveToVault && savedToVault ? "Sample report loaded and saved locally." : "Sample report loaded.";
         } catch (error) {
           report.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
           errorBox.textContent = error.message;
@@ -1043,9 +1457,11 @@
           }
 
           const analyzedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          renderReport(data, `Analyzed ${file.name} at ${analyzedAt}`);
+          const sourceLabel = `Analyzed ${file.name} at ${analyzedAt}`;
+          renderReport(data, sourceLabel);
+          const savedToVault = await saveReportToHistory(data, sourceLabel);
           statusBox.className = "form-status success";
-          statusBox.textContent = `Analyzed ${file.name}.`;
+          statusBox.textContent = savedToVault ? `Analyzed ${file.name} and saved locally.` : `Analyzed ${file.name}.`;
           report.scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (error) {
           errorBox.textContent = error.message;
@@ -1054,7 +1470,79 @@
         }
       });
 
-      sampleButton.addEventListener("click", () => loadSample({ forceRefresh: true }));
+      sampleButton.addEventListener("click", () => loadSample({ forceRefresh: true, saveToVault: true }));
+
+      sidebarTabButtons.forEach((button) => {
+        button.addEventListener("click", () => showSidebarTab(button.dataset.sidebarTab));
+      });
+
+      refreshHistoryButton.addEventListener("click", () => refreshHistoryList());
+
+      clearHistoryButton.addEventListener("click", async () => {
+        try {
+          await clearHistoryReports();
+          await refreshHistoryList();
+          setHistoryStatus("Local History Vault cleared.", "success");
+        } catch (error) {
+          setHistoryStatus(error.message);
+        }
+      });
+
+      historyList.addEventListener("click", async (event) => {
+        const openButton = event.target.closest("[data-history-open]");
+        const deleteButton = event.target.closest("[data-history-delete]");
+
+        if (deleteButton) {
+          try {
+            await deleteHistoryReport(deleteButton.dataset.historyDelete);
+            await refreshHistoryList();
+            setHistoryStatus("Report removed from Local History Vault.", "success");
+          } catch (error) {
+            setHistoryStatus(error.message);
+          }
+          return;
+        }
+
+        if (!openButton) {
+          return;
+        }
+
+        const records = await refreshHistoryList();
+        const record = records.find((item) => item.id === openButton.dataset.historyOpen);
+        if (!record?.report) {
+          setHistoryStatus("Saved report could not be opened.");
+          return;
+        }
+
+        renderReport(record.report, `Restored from Local History Vault - ${reportHistoryDate(record)}`);
+        statusBox.className = "form-status success";
+        statusBox.textContent = "Restored a locally saved report.";
+        report.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+
+      function openPrivacyModal() {
+        privacyModal.hidden = false;
+        privacyCloseButton.focus();
+      }
+
+      function closePrivacyModal() {
+        privacyModal.hidden = true;
+        privacyOpenButton.focus();
+      }
+
+      privacyOpenButton.addEventListener("click", openPrivacyModal);
+      privacyCloseButton.addEventListener("click", closePrivacyModal);
+      privacyModal.addEventListener("click", (event) => {
+        if (event.target === privacyModal) {
+          closePrivacyModal();
+        }
+      });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && !privacyModal.hidden) {
+          closePrivacyModal();
+        }
+      });
+
       report.addEventListener("click", async (event) => {
         const copyButton = event.target.closest("#copy-narrative");
         const pdfButton = event.target.closest("#download-pdf");

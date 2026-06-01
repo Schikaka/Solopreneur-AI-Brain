@@ -30,10 +30,39 @@ def _missing_columns(df):
     return sorted(REQUIRED_COLUMNS.difference(df.columns))
 
 
-def _decode_base64_csv(file_path):
-    encoded = Path(file_path).read_text(encoding="utf-8").strip()
-    decoded_csv = base64.b64decode(encoded, validate=True).decode("utf-8")
+def _decode_base64_csv_text(encoded):
+    decoded_csv = base64.b64decode(str(encoded).strip(), validate=True).decode("utf-8-sig")
     return pd.read_csv(io.StringIO(decoded_csv))
+
+
+def _read_csv_text(source):
+    if hasattr(source, "read"):
+        payload = source.read()
+        if hasattr(source, "seek"):
+            source.seek(0)
+    elif isinstance(source, (bytes, bytearray)):
+        payload = bytes(source)
+    elif isinstance(source, Path):
+        payload = source.read_bytes()
+    elif isinstance(source, str):
+        if "\n" not in source and "\r" not in source:
+            possible_path = Path(source)
+            try:
+                source_is_path = possible_path.exists()
+            except OSError:
+                source_is_path = False
+            if source_is_path:
+                payload = possible_path.read_bytes()
+            else:
+                payload = source
+        else:
+            payload = source
+    else:
+        raise TypeError("CSV source must be a path, bytes, text, or file-like object.")
+
+    if isinstance(payload, bytes):
+        return payload.decode("utf-8-sig")
+    return str(payload)
 
 
 def _safe_divide(numerator, denominator):
@@ -124,15 +153,16 @@ def normalize_marketing_data(df):
     return normalized
 
 
-def read_marketing_csv(file_path):
+def read_marketing_csv(source):
+    csv_text = _read_csv_text(source)
     try:
-        df = pd.read_csv(file_path)
+        df = pd.read_csv(io.StringIO(csv_text))
     except Exception:
-        df = _decode_base64_csv(file_path)
+        df = _decode_base64_csv_text(csv_text)
 
     if _missing_columns(df):
         try:
-            df = _decode_base64_csv(file_path)
+            df = _decode_base64_csv_text(csv_text)
         except Exception as exc:
             raise ValueError(f"CSV is missing required columns: {_missing_columns(df)}") from exc
 
@@ -261,8 +291,8 @@ def get_insights(df):
     return insights
 
 
-def get_top_3_insights(file_path):
-    df = read_marketing_csv(file_path)
+def get_top_3_insights(source):
+    df = source if isinstance(source, pd.DataFrame) else read_marketing_csv(source)
     daily = build_daily_frame(df)
     metrics = [
         ("highest_roas", "ROAS", "ROAS", lambda value: f"{value:.2f}x"),
@@ -302,8 +332,8 @@ def get_top_3_insights(file_path):
     )[:3]
 
 
-def analyze_data(file_path, license_key=""):
-    df = read_marketing_csv(file_path)
+def analyze_data(csv_source, license_key=""):
+    df = read_marketing_csv(csv_source)
 
     total_spend = df["Spend"].sum()
     total_clicks = df["Clicks"].sum()
@@ -327,7 +357,7 @@ def analyze_data(file_path, license_key=""):
     return {
         "stats": stats,
         "insights": get_insights(df),
-        "top_daily_insights": get_top_3_insights(file_path),
+        "top_daily_insights": get_top_3_insights(df),
         "daily_trends": build_daily_trends(df),
         "narrative": get_ai_narrative(stats, license_key) if license_key else _fallback_narrative(stats),
     }

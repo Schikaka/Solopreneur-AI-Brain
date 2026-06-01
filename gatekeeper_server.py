@@ -825,6 +825,8 @@ def create_app():
     @app.after_request
     def finish_request_context(response):
         response.headers["X-Request-ID"] = REQUEST_ID.get()
+        if request.path == "/verify-and-generate":
+            response.headers["Cache-Control"] = "no-store"
         log_event(
             logging.INFO,
             "request_complete",

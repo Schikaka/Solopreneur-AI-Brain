@@ -1,3 +1,4 @@
+from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
@@ -112,3 +113,17 @@ def test_uploaded_normal_csv_is_supported(tmp_path):
 
     assert list(df["Campaign"]) == ["Search"]
     assert df["Spend"].sum() == 100
+
+
+def test_analyze_data_accepts_in_memory_csv_stream():
+    csv_bytes = (
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Search,100,50,1000,5,300\n"
+        b"2026-05-02,Search,120,60,1200,8,400\n"
+    )
+
+    result = analyze_data(BytesIO(csv_bytes))
+
+    assert result["stats"]["total_spend"] == 220.0
+    assert result["stats"]["total_revenue"] == 700.0
+    assert result["daily_trends"][0]["date"] == "2026-05-01"
