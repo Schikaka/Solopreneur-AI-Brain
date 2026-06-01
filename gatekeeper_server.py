@@ -78,6 +78,8 @@ Non-negotiable narrative rules:
 - Never mention Gatekeeper, License, API keys, model providers, infrastructure, fallback behavior, or internal implementation details.
 - Use Achievement-Based Framing: describe spend as "deployed capital" and revenue as "secured return".
 - Use the Rule of Three: organize the report around exactly three strategic pillars: Execution Efficiency, Campaign Momentum, and Optimization Pathways.
+- When channel_metrics are present, frame the report as Strategic Attribution: explain how awareness channels create demand that conversion channels capture.
+- Recommend budget reallocation toward the most efficient channel while preserving the role of supporting channels.
 - Use PAS (Problem-Agitate-Solution) when performance dips or weak efficiency signals appear, while keeping the tone executive and constructive.
 - End with a dedicated Strategic Recommendations section containing exactly three numbered recommendations.
 - Make the output immediately copy-pasteable for a client-facing boardroom report.
@@ -1096,6 +1098,13 @@ def _safe_campaign_name(value):
     return text
 
 
+def _safe_channel_name(value, fallback="the strongest channel"):
+    text = str(value or "").strip()
+    if not text or _contains_forbidden_narrative_terms(text):
+        return fallback
+    return text
+
+
 def _sanitize_directive(directive):
     directive = directive if isinstance(directive, dict) else {}
     tone = str(directive.get("tone") or DIRECTIVE_TONES[0]).strip().title()
@@ -1110,6 +1119,21 @@ def _sanitize_directive(directive):
 def _sanitized_stats_for_narrative(stats):
     sanitized = dict(stats or {})
     sanitized["top_campaign"] = _safe_campaign_name(sanitized.get("top_campaign"))
+    sanitized["channels"] = [
+        _safe_channel_name(channel, fallback="channel")
+        for channel in sanitized.get("channels", [])
+    ] if isinstance(sanitized.get("channels"), list) else sanitized.get("channels", [])
+    if isinstance(sanitized.get("channel_metrics"), list):
+        sanitized["channel_metrics"] = [
+            {**metric, "channel": _safe_channel_name((metric or {}).get("channel"), fallback="channel")}
+            for metric in sanitized["channel_metrics"]
+            if isinstance(metric, dict)
+        ]
+    if isinstance(sanitized.get("strategic_attribution"), dict):
+        attribution = dict(sanitized["strategic_attribution"])
+        for key in ("awareness_channel", "conversion_channel", "best_efficiency_channel", "lowest_efficiency_channel"):
+            attribution[key] = _safe_channel_name(attribution.get(key), fallback="channel")
+        sanitized["strategic_attribution"] = attribution
     return sanitized
 
 
@@ -1126,6 +1150,36 @@ def _number_facts(stats):
             continue
         if isinstance(value, (int, float)):
             facts[key] = value
+    return facts
+
+
+def _classify_numeric_fact_type(key_path):
+    lowered = str(key_path or "").lower()
+    if any(token in lowered for token in ("spend", "revenue")):
+        return "money"
+    if any(token in lowered for token in ("roas", "ratio", "multiplier")):
+        return "multiplier"
+    if any(token in lowered for token in ("ctr", "rate", "share", "percent")):
+        return "percent"
+    return "number"
+
+
+def _nested_numeric_facts(value, prefix="stats"):
+    facts = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            facts.extend(_nested_numeric_facts(child, f"{prefix}.{key}"))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            facts.extend(_nested_numeric_facts(child, f"{prefix}[{index}]"))
+    elif not isinstance(value, bool) and isinstance(value, (int, float)):
+        facts.append(
+            {
+                "key": prefix,
+                "value": float(value),
+                "type": _classify_numeric_fact_type(prefix),
+            }
+        )
     return facts
 
 
@@ -1311,7 +1365,7 @@ def _build_reasoning_trace(
 
 
 def _numeric_source_facts(stats, audit_context=None):
-    facts = []
+    facts = _nested_numeric_facts(stats)
     sanitized = stats or {}
     money_keys = {"total_revenue", "total_spend"}
     for key, value in sanitized.items():
@@ -1566,9 +1620,27 @@ def _elite_cmo_narrative(stats, directive=None):
     directive = _sanitize_directive(directive)
     total_revenue = _safe_float(sanitized.get("total_revenue"))
     total_spend = _safe_float(sanitized.get("total_spend"))
-    avg_roas = _safe_float(sanitized.get("avg_roas"))
+    avg_roas = _safe_float(sanitized.get("blended_roas", sanitized.get("avg_roas")))
     total_conversions = _safe_int(sanitized.get("total_conversions"))
     top_campaign = sanitized["top_campaign"]
+    channel_metrics = sanitized.get("channel_metrics") if isinstance(sanitized.get("channel_metrics"), list) else []
+    attribution = sanitized.get("strategic_attribution") if isinstance(sanitized.get("strategic_attribution"), dict) else {}
+    best_channel = _safe_channel_name(attribution.get("best_efficiency_channel") or sanitized.get("top_channel"))
+    awareness_channel = _safe_channel_name(attribution.get("awareness_channel") or best_channel, fallback=best_channel)
+    conversion_channel = _safe_channel_name(attribution.get("conversion_channel") or best_channel, fallback=best_channel)
+    lowest_channel = _safe_channel_name(attribution.get("lowest_efficiency_channel") or "", fallback="the lowest-return channel")
+    budget_reallocation = str(attribution.get("budget_reallocation") or "").strip()
+    if not budget_reallocation or _contains_forbidden_narrative_terms(budget_reallocation):
+        budget_reallocation = (
+            f"Shift incremental deployed capital toward {best_channel} while monitoring saturation."
+        )
+    channel_context = ""
+    if channel_metrics:
+        ordered = sorted(channel_metrics, key=lambda item: _safe_float(item.get("roas")), reverse=True)
+        channel_context = "; ".join(
+            f"{_safe_channel_name(item.get('channel'), fallback='channel')}: {_safe_float(item.get('roas')):.2f}x ROAS"
+            for item in ordered[:3]
+        )
 
     efficiency_posture = (
         "The account is converting capital with strong discipline"
@@ -1588,23 +1660,25 @@ def _elite_cmo_narrative(stats, directive=None):
     return (
         "**Executive CMO Brief**\n"
         f"The portfolio generated {_format_money(total_revenue)} in secured return from "
-        f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x ROAS profile "
+        f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x blended ROAS profile "
         f"and {total_conversions:,} conversions. Momentum is anchored by {top_campaign}, giving leadership "
         f"a clear signal for where disciplined scaling should begin. The strategic directive is "
         f"{directive['tone']} tone with a {directive['goal']} goal.\n\n"
         "**Execution Efficiency**\n"
-        f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x. "
-        "This creates a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
+        f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x on a blended basis. "
+        f"Channel efficiency is led by {best_channel}"
+        f"{f' ({channel_context})' if channel_context else ''}, creating a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
         "**Campaign Momentum**\n"
-        f"{top_campaign} is the primary momentum driver and should be treated as the current proof point for "
-        "message-market fit. The strategic objective is to preserve its signal quality while extending learnings "
-        "into adjacent audiences and creative angles.\n\n"
+        f"{awareness_channel} is creating demand signals that {conversion_channel} can convert into secured return. "
+        f"{top_campaign} remains the campaign-level proof point, so the strategic objective is to preserve signal quality "
+        "while connecting awareness, intent, and conversion into one coordinated attribution story.\n\n"
         "**Optimization Pathways**\n"
-        f"{optimization_path} The operating focus should be sharper allocation, cleaner conversion paths, "
+        f"{optimization_path} {budget_reallocation} Treat {lowest_channel} as the first reallocation review point. "
+        "The operating focus should be sharper allocation, cleaner conversion paths, "
         "and faster feedback loops between spend, revenue, and campaign-level response.\n\n"
         "**Strategic Recommendations**\n"
-        f"1. Reallocate incremental deployed capital toward {top_campaign} and closely related high-intent segments.\n"
-        "2. Protect secured return by tightening review of underperforming audiences, placements, and creative before scaling.\n"
+        f"1. Reallocate incremental deployed capital toward {best_channel} until marginal ROAS begins to normalize.\n"
+        f"2. Use {awareness_channel} to keep demand creation active while {conversion_channel} captures the highest-return intent.\n"
         "3. Establish a weekly executive scorecard around secured return, ROAS, conversions, and campaign momentum."
     )
 
@@ -1632,15 +1706,18 @@ def _build_cmo_messages(stats, directive=None, audit_context=None):
         f"{json.dumps(sanitized_stats, sort_keys=True)}\n\n"
         f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
         f"Audit context with CSV row and column indexes:\n{_audit_context_prompt(audit_context)}\n\n"
+        "If channel_metrics are present, treat this as a Strategic Attribution report. Explain the synergy between channels, "
+        "such as awareness channels creating demand that search or high-intent channels convert. Recommend budget reallocation "
+        "toward the most efficient performer while respecting supporting-channel roles.\n\n"
         "Return plain markdown with exactly this structure:\n"
         "**Executive CMO Brief**\n"
-        "One concise opening paragraph using the phrases deployed capital and secured return.\n\n"
+        "One concise opening paragraph using the phrases deployed capital, secured return, and blended ROAS.\n\n"
         "**Execution Efficiency**\n"
-        "One concise paragraph on capital efficiency and ROAS.\n\n"
+        "One concise paragraph on capital efficiency, blended ROAS, and channel-specific efficiency ratios.\n\n"
         "**Campaign Momentum**\n"
-        "One concise paragraph on the strongest campaign or momentum driver.\n\n"
+        "One concise paragraph on channel synergy and the strongest campaign or momentum driver.\n\n"
         "**Optimization Pathways**\n"
-        "One concise paragraph. Use PAS if any performance signal is weak or declining.\n\n"
+        "One concise paragraph with a budget reallocation recommendation. Use PAS if any performance signal is weak or declining.\n\n"
         "**Strategic Recommendations**\n"
         "1. First executive recommendation.\n"
         "2. Second executive recommendation.\n"

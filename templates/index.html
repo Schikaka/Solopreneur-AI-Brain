@@ -384,6 +384,34 @@
         color: var(--muted);
       }
 
+      .channel-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .channel-badge {
+        display: inline-flex;
+        align-items: center;
+        max-width: 100%;
+        min-height: 28px;
+        padding: 0 9px;
+        border: 1px solid #bfdbfe;
+        border-radius: 999px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-size: 12px;
+        font-weight: 800;
+        overflow-wrap: anywhere;
+      }
+
+      .channel-badge.is-over-limit {
+        border-color: #fecaca;
+        background: #fef2f2;
+        color: #991b1b;
+      }
+
       .upload-box label {
         display: block;
         margin-bottom: 8px;
@@ -1449,14 +1477,15 @@
             <h1>Client report narrative builder</h1>
             <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
             <form class="upload-box" id="upload-form">
-              <label for="csv-file">Marketing CSV</label>
-              <input class="file-input" id="csv-file" type="file" name="file" accept=".csv" aria-label="Upload marketing CSV">
+              <label for="csv-file">Marketing CSVs</label>
+              <input class="file-input" id="csv-file" type="file" name="file" accept=".csv" multiple aria-label="Upload up to 3 marketing CSV files">
+              <div class="channel-badges" id="channel-badges" aria-live="polite"></div>
               <div class="security-note">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="4" y="10" width="16" height="10" rx="2"></rect>
                   <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
                 </svg>
-                <span>CSV data is processed in memory and never stored on the server.</span>
+                <span>Upload up to 3 channel CSVs. Data is processed in memory and never stored on the server.</span>
               </div>
               <div class="directive-panel" id="directive-panel" hidden>
                 <div>
@@ -1485,7 +1514,7 @@
                 <div class="directive-note">Fact-Check Lock keeps CSV numbers unchanged through generation and refinement.</div>
               </div>
               <div class="actions">
-                <button class="button" id="analyze-button" type="submit" aria-label="Analyze uploaded CSV">Analyze CSV</button>
+                <button class="button" id="analyze-button" type="submit" aria-label="Analyze uploaded CSV files">Analyze CSV</button>
                 <button class="button secondary" id="sample-button" type="button" aria-label="Load sample marketing report">Use Sample</button>
               </div>
               <div class="form-status" id="form-status" role="status" aria-live="polite"></div>
@@ -1584,6 +1613,7 @@
       const updateToast = document.querySelector("#update-toast");
       const form = document.querySelector("#upload-form");
       const csvFileInput = document.querySelector("#csv-file");
+      const channelBadges = document.querySelector("#channel-badges");
       const analyzeButton = document.querySelector("#analyze-button");
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
@@ -1617,6 +1647,7 @@
       const stabilityNotice = "Our AI systems are currently optimizing resources. Your report has been prioritized. Please wait 30 seconds and retry.";
       const heartbeatIntervalMs = 5000;
       const requestTimeoutMs = 30000;
+      const maxUploadFiles = 3;
       const historyDbName = "narrativeai.localHistoryVault";
       const historyDbVersion = 1;
       const historyStoreName = "reports";
@@ -1659,14 +1690,59 @@
         return `${directive.tone || "Boardroom"} / ${directive.goal || "Budget Request"}`;
       }
 
+      function selectedCsvFiles() {
+        return Array.from(csvFileInput.files || []);
+      }
+
+      function inferUploadChannelName(fileName) {
+        const stem = String(fileName || "Channel CSV").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim();
+        const lower = stem.toLowerCase();
+        if (lower.includes("search")) return "Google Search";
+        if (lower.includes("google")) return "Google Ads";
+        if (lower.includes("meta") || lower.includes("facebook")) return "Meta";
+        if (lower.includes("instagram")) return "Instagram";
+        if (lower.includes("tiktok")) return "TikTok";
+        if (lower.includes("linkedin")) return "LinkedIn";
+        if (lower.includes("youtube")) return "YouTube";
+        return stem || "Channel CSV";
+      }
+
+      function selectedFileSummary(files = selectedCsvFiles()) {
+        if (!files.length) {
+          return "";
+        }
+        if (files.length === 1) {
+          return files[0].name;
+        }
+        return `${files.length} channel CSVs`;
+      }
+
+      function updateSelectedFileBadges() {
+        const files = selectedCsvFiles();
+        if (!files.length) {
+          channelBadges.innerHTML = "";
+          return;
+        }
+
+        const overLimit = files.length > maxUploadFiles;
+        const badges = files.map((file) => `
+          <span class="channel-badge ${overLimit ? "is-over-limit" : ""}">
+            ${escapeHtml(inferUploadChannelName(file.name))} - ${escapeHtml(file.name)}
+          </span>
+        `).join("");
+        channelBadges.innerHTML = `${badges}${overLimit ? '<span class="channel-badge is-over-limit">Maximum 3 files</span>' : ""}`;
+      }
+
       function updateDirectivePanel() {
-        const hasFile = Boolean(csvFileInput.files[0]);
+        const files = selectedCsvFiles();
+        const hasFile = Boolean(files.length);
+        updateSelectedFileBadges();
         directivePanel.hidden = !hasFile;
         analyzeButton.textContent = hasFile ? "Generate Report" : "Analyze CSV";
         if (hasFile && !statusBox.textContent) {
-          statusBox.textContent = "Strategic directive ready.";
+          statusBox.textContent = files.length > 1 ? "Strategic attribution directive ready." : "Strategic directive ready.";
         }
-        if (!hasFile && statusBox.textContent === "Strategic directive ready.") {
+        if (!hasFile && ["Strategic directive ready.", "Strategic attribution directive ready."].includes(statusBox.textContent)) {
           statusBox.textContent = "";
         }
       }
@@ -2282,6 +2358,8 @@
             directive: data.directive || currentReportDirective,
             insights: data.insights || [],
             top_daily_insights: data.top_daily_insights || [],
+            channel_metrics: data.channel_metrics || data.stats?.channel_metrics || [],
+            channel_sources: data.channel_sources || [],
             daily_trends: data.daily_trends || []
           }
         };
@@ -2607,7 +2685,7 @@
       function setBusy(isBusy, message = "") {
         analyzeButton.disabled = isBusy;
         sampleButton.disabled = isBusy;
-        analyzeButton.textContent = isBusy ? "Analyzing..." : (csvFileInput.files[0] ? "Generate Report" : "Analyze CSV");
+        analyzeButton.textContent = isBusy ? "Analyzing..." : (selectedCsvFiles().length ? "Generate Report" : "Analyze CSV");
         if (isBusy) {
           statusBox.className = "form-status";
           statusBox.textContent = message;
@@ -2621,6 +2699,9 @@
       function renderReport(data, sourceLabel = "Sample data loaded") {
         const stats = data.stats;
         const insights = Array.isArray(data.insights) ? data.insights : [];
+        const channelMetrics = Array.isArray(data.channel_metrics)
+          ? data.channel_metrics
+          : (Array.isArray(stats.channel_metrics) ? stats.channel_metrics : []);
         const dailyTrends = Array.isArray(data.daily_trends) ? data.daily_trends : [];
         const maxRevenue = Math.max(...dailyTrends.map((day) => day.revenue), 1);
         const directive = data.directive || currentReportDirective || getDirective();
@@ -2646,11 +2727,12 @@
 
           <div class="report-source">${escapeHtml(sourceLabel)}</div>
           <div class="report-source">Strategic Directive: ${escapeHtml(directiveLabel(currentReportDirective))}</div>
+          ${channelMetrics.length > 1 ? `<div class="report-source">Channels: ${escapeHtml(channelMetrics.map((item) => item.channel).join(", "))}</div>` : ""}
 
           <div class="metrics">
             ${metric("Revenue", money(stats.total_revenue))}
             ${metric("Spend", money(stats.total_spend))}
-            ${metric("Avg ROAS", `${stats.avg_roas}x`)}
+            ${metric("Blended ROAS", `${stats.blended_roas || stats.avg_roas}x`)}
             ${metric("Conversions", Number(stats.total_conversions || 0).toLocaleString())}
           </div>
 
@@ -2669,6 +2751,24 @@
               `).join("") : '<div class="empty">No insight cards were saved for this local report.</div>'}
             </div>
           </section>
+
+          ${channelMetrics.length ? `
+            <section class="section">
+              <div class="section-head">
+                <h2>Channel Mix</h2>
+                <small>${channelMetrics.length} channel${channelMetrics.length === 1 ? "" : "s"}</small>
+              </div>
+              <div class="insights">
+                ${channelMetrics.map((channel) => `
+                  <article class="insight">
+                    <b>${escapeHtml(channel.channel)}</b>
+                    <strong>${escapeHtml(`${channel.roas}x`)}</strong>
+                    <p>${escapeHtml(`${money(channel.total_spend)} spend secured ${money(channel.total_revenue)} revenue.`)}</p>
+                  </article>
+                `).join("")}
+              </div>
+            </section>
+          ` : ""}
 
           <section class="section">
             <div class="section-head">
@@ -2768,9 +2868,13 @@
         errorBox.textContent = "";
         statusBox.className = "form-status";
 
-        const file = csvFileInput.files[0];
-        if (!file) {
-          errorBox.textContent = "Choose a CSV file first.";
+        const files = selectedCsvFiles();
+        if (!files.length) {
+          errorBox.textContent = "Choose at least one CSV file first.";
+          return;
+        }
+        if (files.length > maxUploadFiles) {
+          errorBox.textContent = "Choose up to 3 CSV files for one report.";
           return;
         }
 
@@ -2782,15 +2886,16 @@
 
         const body = new FormData();
         const directive = getDirective();
-        body.append("file", file);
+        files.forEach((file) => body.append("file", file));
         body.append("license_key", licenseKey);
         body.append("tone", directive.tone);
         body.append("goal", directive.goal);
 
         try {
           closeDrawer({ focus: false });
-          renderReportSkeleton(`Generating ${file.name}...`);
-          setBusy(true, `Generating ${file.name} with ${directiveLabel(directive)}...`);
+          const summary = selectedFileSummary(files);
+          renderReportSkeleton(`Generating ${summary}...`);
+          setBusy(true, `Generating ${summary} with ${directiveLabel(directive)}...`);
           const { response, data } = await fetchJsonWithTimeout("/api/analyze", {
             method: "POST",
             headers: await buildDeviceHeaders(licenseKey),
@@ -2804,12 +2909,14 @@
           }
 
           const analyzedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          const sourceLabel = `Analyzed ${file.name} at ${analyzedAt}`;
+          const sourceLabel = files.length === 1
+            ? `Analyzed ${files[0].name} at ${analyzedAt}`
+            : `Analyzed ${files.length} channel CSVs at ${analyzedAt}`;
           data.directive = data.directive || directive;
           renderReport(data, sourceLabel);
           const savedToVault = await saveReportToHistory(data, sourceLabel);
           statusBox.className = "form-status success";
-          statusBox.textContent = savedToVault ? `Analyzed ${file.name} and saved locally.` : `Analyzed ${file.name}.`;
+          statusBox.textContent = savedToVault ? `Analyzed ${summary} and saved locally.` : `Analyzed ${summary}.`;
           report.scrollIntoView({ behavior: "smooth", block: "start" });
         } catch (error) {
           const message = stabilityMessageFor(error, "The CSV could not be analyzed.");
@@ -2826,12 +2933,15 @@
         errorBox.textContent = "";
         statusBox.className = "form-status";
         updateDirectivePanel();
+        if (selectedCsvFiles().length > maxUploadFiles) {
+          errorBox.textContent = "Choose up to 3 CSV files for one report.";
+        }
       });
 
       [directiveTone, directiveGoal].forEach((selector) => {
         selector.addEventListener("change", () => {
           currentReportDirective = getDirective();
-          if (csvFileInput.files[0]) {
+          if (selectedCsvFiles().length) {
             statusBox.className = "form-status";
             statusBox.textContent = `Strategic directive set to ${directiveLabel(currentReportDirective)}.`;
           }

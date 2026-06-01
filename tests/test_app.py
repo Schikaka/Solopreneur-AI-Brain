@@ -131,7 +131,10 @@ def test_index_has_nonce_csp(client):
     assert b'id="drawer-backdrop"' in response.data
     assert b"setDrawerOpen" in response.data
     assert b"drawerMediaQuery" in response.data
-    assert b'aria-label="Upload marketing CSV"' in response.data
+    assert b'aria-label="Upload up to 3 marketing CSV files"' in response.data
+    assert b"multiple" in response.data
+    assert b"channel-badges" in response.data
+    assert b"Channel Mix" in response.data
     assert b'aria-label="Copy narrative to clipboard"' in response.data
     assert b":focus-visible" in response.data
     assert b'aria-live="polite"' in response.data
@@ -504,7 +507,8 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
 
     def fake_analyze_data(source, license_key, directive=None, device_auth=None):
         captured["source"] = source
-        captured["payload"] = source.getvalue()
+        captured["payload"] = source[0]["source"].getvalue()
+        captured["filename"] = source[0]["filename"]
         captured["license_key"] = license_key
         captured["directive"] = directive
         captured["device_auth"] = device_auth
@@ -531,11 +535,78 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
     )
 
     assert response.status_code == 200
-    assert isinstance(captured["source"], BytesIO)
+    assert isinstance(captured["source"][0]["source"], BytesIO)
     assert captured["payload"] == csv_bytes
+    assert captured["filename"] == "report.csv"
     assert captured["license_key"] == "DEMO123"
     assert captured["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
     assert captured["device_auth"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]
+
+
+def test_upload_accepts_up_to_three_channel_csvs(client, monkeypatch):
+    google_bytes = (
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Search,100,50,1000,5,300\n"
+    )
+    meta_bytes = (
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Awareness,80,40,2000,3,160\n"
+    )
+    captured = {}
+
+    def fake_analyze_data(source, license_key, directive=None, device_auth=None):
+        captured["filenames"] = [item["filename"] for item in source]
+        captured["payloads"] = [item["source"].getvalue() for item in source]
+        return {
+            "stats": {"total_revenue": 460, "total_spend": 180, "avg_roas": 2.56, "blended_roas": 2.56, "total_conversions": 8},
+            "channel_metrics": [],
+            "insights": [],
+            "daily_trends": [],
+            "directive": directive,
+            "narrative": "Multi-channel report",
+        }
+
+    monkeypatch.setattr("app.analyze_data", fake_analyze_data)
+
+    response = client.post(
+        "/api/analyze",
+        data={
+            "file": [
+                (BytesIO(google_bytes), "google_ads.csv"),
+                (BytesIO(meta_bytes), "meta.csv"),
+            ],
+            "license_key": "DEMO123",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 200
+    assert captured["filenames"] == ["google_ads.csv", "meta.csv"]
+    assert captured["payloads"] == [google_bytes, meta_bytes]
+
+
+def test_upload_rejects_more_than_three_csvs(client):
+    csv_bytes = (
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Search,100,50,1000,5,300\n"
+    )
+
+    response = client.post(
+        "/api/analyze",
+        data={
+            "file": [
+                (BytesIO(csv_bytes), "one.csv"),
+                (BytesIO(csv_bytes), "two.csv"),
+                (BytesIO(csv_bytes), "three.csv"),
+                (BytesIO(csv_bytes), "four.csv"),
+            ],
+            "license_key": "DEMO123",
+        },
+        content_type="multipart/form-data",
+    )
+
+    assert response.status_code == 400
+    assert "up to 3" in response.get_json()["error"]
 
 
 def test_upload_valid_csv(client):

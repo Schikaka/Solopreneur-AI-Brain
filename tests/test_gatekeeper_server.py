@@ -763,6 +763,9 @@ def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
     assert "Achievement-Based Framing" in system_prompt
     assert "Rule of Three" in system_prompt
     assert "PAS" in system_prompt
+    assert "Strategic Attribution" in system_prompt
+    assert "budget reallocation" in user_prompt
+    assert "channel-specific efficiency ratios" in user_prompt
     assert "Strategic Recommendations" in user_prompt
 
 
@@ -821,6 +824,38 @@ def test_openai_generation_retries_once_when_truth_verification_fails(monkeypatc
     assert result["truth_verification"]["ok"] is True
     assert "Corrective Message" in bodies[1]["messages"][-1]["content"]
     assert "$999.00" not in result["narrative"]
+
+
+def test_deterministic_generation_explains_channel_synergy():
+    stats = {
+        "total_revenue": 900,
+        "total_spend": 300,
+        "avg_roas": 3,
+        "blended_roas": 3,
+        "total_conversions": 12,
+        "top_campaign": "Search",
+        "top_channel": "Google Ads",
+        "channel_metrics": [
+            {"channel": "Google Ads", "total_spend": 100, "total_revenue": 400, "roas": 4, "total_impressions": 1000},
+            {"channel": "Meta", "total_spend": 200, "total_revenue": 500, "roas": 2.5, "total_impressions": 5000},
+        ],
+        "strategic_attribution": {
+            "awareness_channel": "Meta",
+            "conversion_channel": "Google Ads",
+            "best_efficiency_channel": "Google Ads",
+            "lowest_efficiency_channel": "Meta",
+            "budget_reallocation": "Shift incremental budget from Meta toward Google Ads.",
+        },
+    }
+
+    result = generate_narrative_result(stats)
+
+    assert result["source"] == "deterministic_fallback"
+    assert result["math_verified"] is True
+    assert "blended ROAS" in result["narrative"]
+    assert "Meta is creating demand signals" in result["narrative"]
+    assert "Google Ads" in result["narrative"]
+    assert "Shift incremental budget" in result["narrative"]
 
 
 def test_openai_refinement_uses_gpt_4o_mini_and_fact_lock(monkeypatch):

@@ -5,8 +5,9 @@ agency client updates.
 
 ## What It Does
 
-- Upload a CSV with spend, clicks, impressions, conversions, and revenue.
+- Upload one CSV, or up to three channel CSVs, with spend, clicks, impressions, conversions, and revenue.
 - Review executive stats, daily trend bars, and insight badges.
+- Compare cross-channel efficiency with blended ROAS, total spend, total revenue, and channel-level ratios.
 - Generate a narrative summary using the Emergent LLM API when configured.
 - Fall back to a deterministic narrative when no API key is present.
 

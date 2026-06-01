@@ -389,14 +389,21 @@ def create_app(test_config=None):
 
     @app.post("/api/analyze")
     def analyze_upload():
-        uploaded_file = request.files.get("file")
-        if not uploaded_file or uploaded_file.filename == "":
+        uploaded_files = [
+            uploaded_file
+            for uploaded_file in request.files.getlist("file")
+            if uploaded_file and uploaded_file.filename
+        ]
+        if not uploaded_files:
             return jsonify({"error": "Upload a CSV file to analyze."}), 400
+        if len(uploaded_files) > 3:
+            return jsonify({"error": "Upload up to 3 CSV files for one strategic attribution report."}), 400
 
-        filename = uploaded_file.filename or ""
-        extension = Path(filename).suffix.lower()
-        if extension not in ALLOWED_EXTENSIONS:
-            return jsonify({"error": "Only CSV files are supported."}), 400
+        for uploaded_file in uploaded_files:
+            filename = uploaded_file.filename or ""
+            extension = Path(filename).suffix.lower()
+            if extension not in ALLOWED_EXTENSIONS:
+                return jsonify({"error": "Only CSV files are supported."}), 400
 
         license_key = request.form.get("license_key", "").strip()
         if not license_key:
@@ -409,13 +416,21 @@ def create_app(test_config=None):
             }
         )
 
+        csv_sources = []
         try:
-            csv_bytes = uploaded_file.read()
-            if not csv_bytes:
-                return jsonify({"error": "CSV file is empty."}), 400
+            for uploaded_file in uploaded_files:
+                csv_bytes = uploaded_file.read()
+                if not csv_bytes:
+                    return jsonify({"error": f"{uploaded_file.filename} is empty."}), 400
+                csv_sources.append(
+                    {
+                        "source": io.BytesIO(csv_bytes),
+                        "filename": uploaded_file.filename,
+                    }
+                )
             return jsonify(
                 analyze_data(
-                    io.BytesIO(csv_bytes),
+                    csv_sources,
                     license_key=license_key,
                     directive=directive,
                     device_auth=device_auth,
@@ -427,8 +442,9 @@ def create_app(test_config=None):
             app.logger.exception("Uploaded CSV analysis failed")
             return jsonify({"error": str(exc)}), 400
         finally:
-            uploaded_file.close()
-            csv_bytes = b""
+            for uploaded_file in uploaded_files:
+                uploaded_file.close()
+            csv_sources = []
 
     @app.post("/refine")
     def refine():

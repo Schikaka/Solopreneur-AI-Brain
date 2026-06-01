@@ -75,6 +75,8 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert captured["payload"]["device_hmac"] == "b" * 64
     assert captured["payload"]["session_token"] == "session.jwt"
     assert captured["payload"]["stats"]["total_revenue"] == 13650.0
+    assert captured["payload"]["stats"]["blended_roas"] == 4.58
+    assert captured["payload"]["stats"]["channel_metrics"][0]["channel"] == "Dummy Marketing Data"
     assert captured["payload"]["directive"] == {"tone": "Boardroom", "goal": "Budget Request"}
     assert captured["payload"]["audit_context"]["columns"]["Revenue"] == 7
     assert captured["payload"]["audit_context"]["source_rows"][0]["csv_row_index"] == 2
@@ -87,6 +89,51 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert result["narrative"] == "Narrative from gatekeeper"
     assert result["report_id"] == "report-abc"
     assert result["audit"]["reasoning_trace_available"] is True
+
+
+def test_analyze_data_aggregates_multiple_channel_csvs():
+    google_csv = BytesIO(
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Search,100,50,1000,5,400\n"
+    )
+    meta_csv = BytesIO(
+        b"Date,Campaign,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Awareness,200,80,5000,7,500\n"
+    )
+
+    result = analyze_data(
+        [
+            {"source": google_csv, "filename": "google_ads.csv"},
+            {"source": meta_csv, "filename": "meta.csv"},
+        ]
+    )
+    stats = result["stats"]
+
+    assert stats["total_spend"] == 300.0
+    assert stats["total_revenue"] == 900.0
+    assert stats["blended_roas"] == 3.0
+    assert stats["channel_count"] == 2
+    assert stats["top_channel"] == "Google Ads"
+    assert stats["strategic_attribution"]["awareness_channel"] == "Meta"
+    assert stats["strategic_attribution"]["conversion_channel"] == "Meta"
+    assert [item["channel"] for item in result["channel_metrics"]] == ["Meta", "Google Ads"]
+    assert result["channel_metrics"][1]["roas"] == 4.0
+    assert "blended ROAS" in result["narrative"]
+
+
+def test_analyze_data_uses_channel_column_when_present():
+    csv_bytes = BytesIO(
+        b"Date,Campaign,Channel,Spend,Clicks,Impressions,Conversions,Revenue\n"
+        b"2026-05-01,Prospecting,Meta,100,40,5000,3,200\n"
+        b"2026-05-01,Brand Search,Google Search,80,60,1000,6,360\n"
+    )
+
+    result = analyze_data({"source": csv_bytes, "filename": "combined.csv"})
+
+    assert result["stats"]["channel_count"] == 2
+    assert set(result["stats"]["channels"]) == {"Meta", "Google Search"}
+    assert result["stats"]["top_channel"] == "Google Search"
+    assert result["audit"]["math_verified"] is True
 
 
 def test_analyze_data_can_use_public_gatekeeper_url(monkeypatch):

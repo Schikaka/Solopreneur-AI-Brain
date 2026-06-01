@@ -2,6 +2,7 @@ import base64
 import io
 import json
 import os
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -23,6 +24,20 @@ REQUIRED_COLUMNS = {
     "Revenue",
 }
 NUMERIC_COLUMNS = ["Spend", "Clicks", "Impressions", "Conversions", "Revenue"]
+MAX_CHANNEL_FILES = 3
+CHANNEL_COLUMNS = ("Channel", "channel", "Platform", "platform", "Source", "source", "Network", "network")
+CHANNEL_FILENAME_HINTS = (
+    ("search", "Google Search"),
+    ("google", "Google Ads"),
+    ("meta", "Meta"),
+    ("facebook", "Meta"),
+    ("instagram", "Instagram"),
+    ("tiktok", "TikTok"),
+    ("linkedin", "LinkedIn"),
+    ("youtube", "YouTube"),
+    ("twitter", "X / Twitter"),
+    ("email", "Email"),
+)
 AI_TIMEOUT_SECONDS = 30
 DIRECTIVE_TONES = {"Boardroom", "Startup", "Precise", "Persuasive"}
 DIRECTIVE_GOALS = {"Budget Request", "Performance Fix", "Retention"}
@@ -32,6 +47,53 @@ DEFAULT_RENDER_URL = "https://narrativeai-gatekeeper.onrender.com"
 
 def _missing_columns(df):
     return sorted(REQUIRED_COLUMNS.difference(df.columns))
+
+
+def _humanize_channel_name(value):
+    normalized = re.sub(r"[_-]+", " ", str(value or "").strip())
+    normalized = re.sub(r"\s+", " ", normalized).strip(" .")
+    if not normalized:
+        return "Unknown Channel"
+    lower = normalized.lower()
+    for needle, label in CHANNEL_FILENAME_HINTS:
+        if needle in lower:
+            return label
+    return normalized.title()
+
+
+def _source_parts(source):
+    if isinstance(source, dict):
+        raw_source = source.get("source", source.get("file", source.get("data")))
+        filename = source.get("filename") or source.get("name") or getattr(raw_source, "name", "")
+        return raw_source, str(filename or "").strip()
+    return source, str(getattr(source, "name", "") or (source if isinstance(source, (str, Path)) else "")).strip()
+
+
+def _channel_column(df):
+    for column in CHANNEL_COLUMNS:
+        if column in df.columns:
+            return column
+    return None
+
+
+def infer_channel_name(filename="", df=None, fallback_index=1):
+    if df is not None:
+        column = _channel_column(df)
+        if column:
+            values = [
+                str(value).strip()
+                for value in df[column].dropna().unique().tolist()
+                if str(value).strip()
+            ]
+            if len(values) == 1:
+                return _humanize_channel_name(values[0])
+            if len(values) > 1:
+                return "Multi-Channel CSV"
+
+    stem = Path(str(filename or "")).stem
+    if stem:
+        return _humanize_channel_name(stem)
+    return f"Channel {fallback_index}"
 
 
 def _decode_base64_csv_text(encoded):
@@ -77,6 +139,13 @@ def _format_money(value):
     return f"${float(value):,.2f}"
 
 
+def _safe_story_label(value, fallback):
+    text = str(value or "").strip()
+    if not text or any(term in text.lower() for term in ("gatekeeper", "license", "licence", "api key")):
+        return fallback
+    return text
+
+
 def _json_safe(value):
     if pd.isna(value):
         return None
@@ -101,11 +170,24 @@ def sanitize_directive(directive):
 def _fallback_narrative(stats):
     total_revenue = float(stats.get("total_revenue", 0))
     total_spend = float(stats.get("total_spend", 0))
-    avg_roas = float(stats.get("avg_roas", 0))
+    avg_roas = float(stats.get("blended_roas", stats.get("avg_roas", 0)))
     total_conversions = int(float(stats.get("total_conversions", 0)))
     top_campaign = str(stats.get("top_campaign") or "the leading campaign").strip()
+    channel_metrics = stats.get("channel_metrics") or []
+    attribution = stats.get("strategic_attribution") or {}
     if any(term in top_campaign.lower() for term in ("gatekeeper", "license", "licence", "api key")):
         top_campaign = "the leading campaign"
+    top_channel = _safe_story_label(
+        attribution.get("best_efficiency_channel") or (channel_metrics[0].get("channel") if channel_metrics else top_campaign),
+        "the strongest channel",
+    )
+    conversion_channel = _safe_story_label(attribution.get("conversion_channel") or top_channel, top_channel)
+    awareness_channel = _safe_story_label(attribution.get("awareness_channel") or top_channel, top_channel)
+    budget_reallocation = str(
+        attribution.get("budget_reallocation") or f"Reallocate incremental deployed capital toward {top_channel}."
+    )
+    if any(term in budget_reallocation.lower() for term in ("gatekeeper", "license", "licence", "api key")):
+        budget_reallocation = f"Reallocate incremental deployed capital toward {top_channel}."
 
     efficiency_posture = (
         "The account is converting capital with strong discipline"
@@ -125,22 +207,22 @@ def _fallback_narrative(stats):
     return (
         "**Executive CMO Brief**\n"
         f"The portfolio generated {_format_money(total_revenue)} in secured return from "
-        f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x ROAS profile "
+        f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x blended ROAS profile "
         f"and {total_conversions:,} conversions. Momentum is anchored by {top_campaign}, giving leadership "
         "a clear signal for where disciplined scaling should begin.\n\n"
         "**Execution Efficiency**\n"
-        f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x. "
+        f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x on a blended basis. "
         "This creates a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
         "**Campaign Momentum**\n"
-        f"{top_campaign} is the primary momentum driver and should be treated as the current proof point for "
-        "message-market fit. The strategic objective is to preserve its signal quality while extending learnings "
-        "into adjacent audiences and creative angles.\n\n"
+        f"{awareness_channel} is shaping the awareness signal while {conversion_channel} is converting secured return. "
+        f"{top_campaign} remains the primary campaign proof point, so the strategic objective is to connect upper-funnel demand "
+        "with the channel most capable of capturing it.\n\n"
         "**Optimization Pathways**\n"
-        f"{optimization_path} The operating focus should be sharper allocation, cleaner conversion paths, "
+        f"{optimization_path} {budget_reallocation} The operating focus should be sharper allocation, cleaner conversion paths, "
         "and faster feedback loops between spend, revenue, and campaign-level response.\n\n"
         "**Strategic Recommendations**\n"
-        f"1. Reallocate incremental deployed capital toward {top_campaign} and closely related high-intent segments.\n"
-        "2. Protect secured return by tightening review of underperforming audiences, placements, and creative before scaling.\n"
+        f"1. Reallocate incremental deployed capital toward {top_channel} and closely related high-intent segments.\n"
+        f"2. Use {awareness_channel} to expand demand creation while {conversion_channel} captures the highest-return intent.\n"
         "3. Establish a weekly executive scorecard around secured return, ROAS, conversions, and campaign momentum."
     )
 
@@ -179,6 +261,7 @@ def normalize_marketing_data(df):
 
 
 def read_marketing_csv(source):
+    source, _filename = _source_parts(source)
     csv_text = _read_csv_text(source)
     try:
         df = pd.read_csv(io.StringIO(csv_text))
@@ -192,6 +275,34 @@ def read_marketing_csv(source):
             raise ValueError(f"CSV is missing required columns: {_missing_columns(df)}") from exc
 
     return normalize_marketing_data(df)
+
+
+def read_marketing_sources(sources):
+    source_items = list(sources) if isinstance(sources, (list, tuple)) else [sources]
+    if not source_items:
+        raise ValueError("Upload at least one CSV file.")
+    if len(source_items) > MAX_CHANNEL_FILES:
+        raise ValueError(f"Upload up to {MAX_CHANNEL_FILES} CSV files.")
+
+    frames = []
+    channel_sources = []
+    for index, item in enumerate(source_items, start=1):
+        raw_source, filename = _source_parts(item)
+        df = read_marketing_csv(raw_source)
+        inferred_channel = infer_channel_name(filename, df, fallback_index=index)
+        channel_column = _channel_column(df)
+        normalized = df.copy()
+        if channel_column:
+            normalized["Channel"] = normalized[channel_column].astype(str).str.strip()
+            normalized.loc[normalized["Channel"].eq("") | normalized["Channel"].eq("nan"), "Channel"] = inferred_channel
+            normalized["Channel"] = normalized["Channel"].map(_humanize_channel_name)
+        else:
+            normalized["Channel"] = inferred_channel
+        normalized["SourceFile"] = Path(filename).name if filename else f"CSV {index}"
+        frames.append(normalized)
+        channel_sources.append({"filename": normalized["SourceFile"].iloc[0], "channel": inferred_channel})
+
+    return pd.concat(frames, ignore_index=True), channel_sources
 
 
 def _render_domain_url():
@@ -273,57 +384,94 @@ def build_audit_context(df, stats):
         for row in source_rows
         if str((row["columns"].get("Campaign") or {}).get("value")) == str(top_campaign)
     ]
+    aggregate_map = {
+        "total_revenue": {
+            "stat_key": "total_revenue",
+            "calculation": "sum",
+            "column": "Revenue",
+            "column_index": column_indexes.get("Revenue"),
+            "csv_rows": all_rows,
+            "value": stats.get("total_revenue"),
+        },
+        "total_spend": {
+            "stat_key": "total_spend",
+            "calculation": "sum",
+            "column": "Spend",
+            "column_index": column_indexes.get("Spend"),
+            "csv_rows": all_rows,
+            "value": stats.get("total_spend"),
+        },
+        "avg_roas": {
+            "stat_key": "avg_roas",
+            "calculation": "total_revenue / total_spend",
+            "source_metrics": ["total_revenue", "total_spend"],
+            "csv_rows": all_rows,
+            "columns": [
+                {"name": "Revenue", "column_index": column_indexes.get("Revenue")},
+                {"name": "Spend", "column_index": column_indexes.get("Spend")},
+            ],
+            "value": stats.get("avg_roas"),
+        },
+        "blended_roas": {
+            "stat_key": "blended_roas",
+            "calculation": "total_revenue / total_spend",
+            "source_metrics": ["total_revenue", "total_spend"],
+            "csv_rows": all_rows,
+            "value": stats.get("blended_roas", stats.get("avg_roas")),
+        },
+        "total_conversions": {
+            "stat_key": "total_conversions",
+            "calculation": "sum",
+            "column": "Conversions",
+            "column_index": column_indexes.get("Conversions"),
+            "csv_rows": all_rows,
+            "value": stats.get("total_conversions"),
+        },
+        "top_campaign": {
+            "stat_key": "top_campaign",
+            "calculation": "highest summed Revenue by Campaign",
+            "columns": [
+                {"name": "Campaign", "column_index": column_indexes.get("Campaign")},
+                {"name": "Revenue", "column_index": column_indexes.get("Revenue")},
+            ],
+            "csv_rows": top_campaign_rows,
+            "value": top_campaign,
+        },
+    }
+    for index, channel in enumerate(stats.get("channel_metrics") or [], start=1):
+        channel_name = str(channel.get("channel") or f"Channel {index}")
+        channel_rows = [
+            row["csv_row_index"]
+            for row in source_rows
+            if str((row["columns"].get("Channel") or {}).get("value")) == channel_name
+        ]
+        slug = re.sub(r"[^a-z0-9]+", "_", channel_name.lower()).strip("_") or f"channel_{index}"
+        for metric_key, column_name in (
+            ("total_spend", "Spend"),
+            ("total_revenue", "Revenue"),
+            ("total_conversions", "Conversions"),
+            ("total_clicks", "Clicks"),
+            ("total_impressions", "Impressions"),
+            ("roas", None),
+            ("ctr", None),
+            ("conversion_rate", None),
+            ("spend_share", None),
+            ("revenue_share", None),
+        ):
+            aggregate_map[f"channel_{slug}_{metric_key}"] = {
+                "stat_key": f"channel_metrics[{index - 1}].{metric_key}",
+                "channel": channel_name,
+                "calculation": "channel aggregate",
+                "column": column_name,
+                "column_index": column_indexes.get(column_name) if column_name else None,
+                "csv_rows": channel_rows,
+                "value": channel.get(metric_key),
+            }
 
     return {
         "columns": column_indexes,
         "source_rows": source_rows,
-        "aggregate_map": {
-            "total_revenue": {
-                "stat_key": "total_revenue",
-                "calculation": "sum",
-                "column": "Revenue",
-                "column_index": column_indexes.get("Revenue"),
-                "csv_rows": all_rows,
-                "value": stats.get("total_revenue"),
-            },
-            "total_spend": {
-                "stat_key": "total_spend",
-                "calculation": "sum",
-                "column": "Spend",
-                "column_index": column_indexes.get("Spend"),
-                "csv_rows": all_rows,
-                "value": stats.get("total_spend"),
-            },
-            "avg_roas": {
-                "stat_key": "avg_roas",
-                "calculation": "total_revenue / total_spend",
-                "source_metrics": ["total_revenue", "total_spend"],
-                "csv_rows": all_rows,
-                "columns": [
-                    {"name": "Revenue", "column_index": column_indexes.get("Revenue")},
-                    {"name": "Spend", "column_index": column_indexes.get("Spend")},
-                ],
-                "value": stats.get("avg_roas"),
-            },
-            "total_conversions": {
-                "stat_key": "total_conversions",
-                "calculation": "sum",
-                "column": "Conversions",
-                "column_index": column_indexes.get("Conversions"),
-                "csv_rows": all_rows,
-                "value": stats.get("total_conversions"),
-            },
-            "top_campaign": {
-                "stat_key": "top_campaign",
-                "calculation": "highest summed Revenue by Campaign",
-                "columns": [
-                    {"name": "Campaign", "column_index": column_indexes.get("Campaign")},
-                    {"name": "Revenue", "column_index": column_indexes.get("Revenue")},
-                ],
-                "csv_rows": top_campaign_rows,
-                "value": top_campaign,
-            },
-        },
+        "aggregate_map": aggregate_map,
     }
 
 
@@ -453,6 +601,93 @@ def build_campaign_frame(df):
     return campaign.fillna(0)
 
 
+def build_channel_frame(df):
+    if "Channel" not in df.columns:
+        channel_df = df.copy()
+        channel_df["Channel"] = "Marketing"
+    else:
+        channel_df = df.copy()
+
+    channel = (
+        channel_df.groupby("Channel", as_index=False)
+        .agg(
+            Spend=("Spend", "sum"),
+            Clicks=("Clicks", "sum"),
+            Impressions=("Impressions", "sum"),
+            Conversions=("Conversions", "sum"),
+            Revenue=("Revenue", "sum"),
+        )
+        .sort_values("Revenue", ascending=False)
+    )
+    channel["ROAS"] = _safe_divide(channel["Revenue"], channel["Spend"])
+    channel["CTR"] = _safe_divide(channel["Clicks"], channel["Impressions"]) * 100
+    channel["ConversionRate"] = _safe_divide(channel["Conversions"], channel["Clicks"]) * 100
+    total_spend = float(channel["Spend"].sum()) or 1
+    total_revenue = float(channel["Revenue"].sum()) or 1
+    channel["SpendShare"] = (channel["Spend"] / total_spend) * 100
+    channel["RevenueShare"] = (channel["Revenue"] / total_revenue) * 100
+    return channel.fillna(0)
+
+
+def build_channel_metrics(df):
+    channel = build_channel_frame(df)
+    return [
+        {
+            "channel": str(row.Channel),
+            "total_spend": round(float(row.Spend), 2),
+            "total_clicks": int(row.Clicks),
+            "total_impressions": int(row.Impressions),
+            "total_conversions": int(row.Conversions),
+            "total_revenue": round(float(row.Revenue), 2),
+            "roas": round(float(row.ROAS), 2),
+            "ctr": round(float(row.CTR), 2),
+            "conversion_rate": round(float(row.ConversionRate), 2),
+            "spend_share": round(float(row.SpendShare), 2),
+            "revenue_share": round(float(row.RevenueShare), 2),
+        }
+        for row in channel.itertuples(index=False)
+    ]
+
+
+def build_strategic_attribution(channel_metrics):
+    if not channel_metrics:
+        return {
+            "awareness_channel": "",
+            "conversion_channel": "",
+            "best_efficiency_channel": "",
+            "budget_reallocation": "No channel-level recommendation is available.",
+            "synergy_summary": "Upload channel-labeled data to unlock strategic attribution.",
+        }
+
+    awareness = max(channel_metrics, key=lambda item: item.get("total_impressions", 0))
+    conversion = max(channel_metrics, key=lambda item: item.get("total_revenue", 0))
+    efficient = max(channel_metrics, key=lambda item: item.get("roas", 0))
+    weakest = min(channel_metrics, key=lambda item: item.get("roas", 0))
+    if len(channel_metrics) > 1 and weakest["channel"] != efficient["channel"]:
+        reallocation = (
+            f"Shift incremental budget from {weakest['channel']} toward {efficient['channel']} "
+            f"until marginal ROAS converges closer to the blended portfolio average."
+        )
+    else:
+        reallocation = (
+            f"Keep incremental budget concentrated in {efficient['channel']} while watching for ROAS saturation."
+        )
+
+    synergy = (
+        f"{awareness['channel']} is creating the broadest reach signal, while "
+        f"{conversion['channel']} is converting the strongest secured return. "
+        "The strategic story is a coordinated funnel, not isolated channel performance."
+    )
+    return {
+        "awareness_channel": awareness["channel"],
+        "conversion_channel": conversion["channel"],
+        "best_efficiency_channel": efficient["channel"],
+        "lowest_efficiency_channel": weakest["channel"],
+        "budget_reallocation": reallocation,
+        "synergy_summary": synergy,
+    }
+
+
 def build_daily_trends(df):
     daily = build_daily_frame(df)
 
@@ -558,7 +793,7 @@ def get_top_3_insights(source):
 
 
 def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
-    df = read_marketing_csv(csv_source)
+    df, channel_sources = read_marketing_sources(csv_source)
 
     total_spend = df["Spend"].sum()
     total_clicks = df["Clicks"].sum()
@@ -568,15 +803,24 @@ def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
     avg_roas = total_revenue / total_spend
     avg_ctr = (total_clicks / total_impressions) * 100
     top_campaign = df.groupby("Campaign")["Revenue"].sum().idxmax()
+    channel_metrics = build_channel_metrics(df)
+    strategic_attribution = build_strategic_attribution(channel_metrics)
 
     stats = {
         "total_spend": round(float(total_spend), 2),
         "total_clicks": int(total_clicks),
+        "total_impressions": int(total_impressions),
         "total_conversions": int(total_conversions),
         "total_revenue": round(float(total_revenue), 2),
         "avg_ctr": round(float(avg_ctr), 2),
         "avg_roas": round(float(avg_roas), 2),
+        "blended_roas": round(float(avg_roas), 2),
         "top_campaign": top_campaign,
+        "channel_count": len(channel_metrics),
+        "channels": [item["channel"] for item in channel_metrics],
+        "top_channel": strategic_attribution.get("best_efficiency_channel"),
+        "channel_metrics": channel_metrics,
+        "strategic_attribution": strategic_attribution,
     }
     directive = sanitize_directive(directive)
     audit_context = build_audit_context(df, stats)
@@ -595,7 +839,9 @@ def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
             "audit": {
                 "report_id": None,
                 "math_anomaly_detected": False,
+                "math_verified": True,
                 "anomaly_details": [],
+                "truth_verification": {"ok": True, "math_verified": True, "unsupported_numbers": []},
                 "reasoning_trace_available": False,
             },
         }
@@ -605,6 +851,8 @@ def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
         "stats": stats,
         "insights": get_insights(df),
         "top_daily_insights": get_top_3_insights(df),
+        "channel_metrics": channel_metrics,
+        "channel_sources": channel_sources,
         "daily_trends": build_daily_trends(df),
         "directive": directive,
         "narrative": narrative_result.get("narrative", _fallback_narrative(stats)),

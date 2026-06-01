@@ -245,6 +245,21 @@ def scan_static_controls(base_dir):
             "required": ("forceHttpsUrl", "Upgrade to Pro", "dashboard-upgrade-link"),
         },
         {
+            "name": "Multi-channel CSV upload UI",
+            "path": "templates/index.html",
+            "required": ("multiple", "channel-badges", "maxUploadFiles", "Channel Mix"),
+        },
+        {
+            "name": "Cross-channel analytics",
+            "path": "narrative_logic.py",
+            "required": ("MAX_CHANNEL_FILES", "build_channel_metrics", "blended_roas", "strategic_attribution", "channel_metrics"),
+        },
+        {
+            "name": "Strategic attribution CMO prompt",
+            "path": "gatekeeper_server.py",
+            "required": ("Strategic Attribution", "channel_metrics", "budget reallocation", "awareness channels create demand"),
+        },
+        {
             "name": "Elite privacy guarantee",
             "path": "templates/about.html",
             "required": ("Elite Privacy Guarantee", "Zero raw CSV retention", "Fact-Check Lock", "Protected access boundary"),
