@@ -10,6 +10,7 @@ from flask import Flask, g, jsonify, render_template, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
 from narrative_logic import analyze_data, refine_report, sanitize_directive
+from security_tokens import authorization_header, gatekeeper_payload, payload_hash
 
 
 BASE_DIR = Path(__file__).parent
@@ -83,6 +84,21 @@ def _device_auth_from_request():
         "device_hmac": request.headers.get("X-Device-HMAC", "").strip(),
         "session_token": request.headers.get("X-Session-Token", "").strip(),
     }
+
+
+def _signed_gatekeeper_headers(payload):
+    headers = {
+        "Authorization": authorization_header(payload),
+        "X-Payload-SHA256": payload_hash(payload),
+    }
+    for header_name, payload_key in (
+        ("X-Device-ID", "hardware_id"),
+        ("X-Device-HMAC", "device_hmac"),
+        ("X-Session-Token", "session_token"),
+    ):
+        if payload.get(payload_key):
+            headers[header_name] = str(payload[payload_key])
+    return headers
 
 
 def create_app(test_config=None):
@@ -303,6 +319,36 @@ def create_app(test_config=None):
                     "error": "Update check is unavailable.",
                 }
             ), 503
+
+    @app.post("/api/access-status")
+    def access_status():
+        payload = request.get_json(silent=True) or {}
+        license_key = str(payload.get("license_key", "")).strip()
+        if not license_key:
+            return jsonify({"authorized": False, "upgrade_required": True}), 200
+
+        device_auth = _device_auth_from_request()
+        signed_payload = gatekeeper_payload({}, license_key, device_auth)
+        try:
+            response = requests.post(
+                f"{_gatekeeper_url()}/device-access",
+                json=signed_payload,
+                headers=_signed_gatekeeper_headers(signed_payload),
+                timeout=2.0,
+            )
+            if response.status_code in {401, 403}:
+                return jsonify({"authorized": False, "upgrade_required": True}), 200
+            response.raise_for_status()
+            data = response.json()
+            return jsonify(
+                {
+                    "authorized": bool(data.get("authorized")),
+                    "upgrade_required": not bool(data.get("authorized")),
+                    "identity": data.get("identity", {}),
+                }
+            )
+        except Exception:
+            return jsonify({"authorized": False, "upgrade_required": True}), 200
 
     @app.post("/api/feedback")
     def strategist_feedback():

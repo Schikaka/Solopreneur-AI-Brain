@@ -99,20 +99,24 @@ def test_index_has_nonce_csp(client):
     assert b"Past Reports" in response.data
     assert b"indexedDB.open" in response.data
     assert b"Privacy & Security" in response.data
-    assert b"System Checking" in response.data
-    assert b'role="status" aria-label="System heartbeat status" aria-live="polite"' in response.data
-    assert b"/api/system-status" in response.data
-    assert b"/api/check-updates" in response.data
     assert b"appVersion" in response.data
-    assert b"license-splash" in response.data
-    assert b"startup-license-key" in response.data
+    assert b"access-splash" in response.data
+    assert b"access-status" in response.data
+    assert b"/api/access-status" in response.data
+    assert b"verifyStoredAccess" in response.data
+    assert b"Upload CSV" in response.data
+    assert b"Upgrade to Elite" in response.data
+    assert b"startup-license-key" not in response.data
+    assert b"License Key" not in response.data
+    assert b"license-splash" not in response.data
+    assert b"system-status" not in response.data
+    assert b"/api/system-status" not in response.data
+    assert b"/api/check-updates" not in response.data
     assert b"initialStripePaymentLink" in response.data
-    assert b"Upgrade to Pro" in response.data
-    assert b"dashboard-upgrade-link" in response.data
+    assert b"Upgrade to Pro" not in response.data
+    assert b"dashboard-upgrade-link" not in response.data
     assert b"forceHttpsUrl" in response.data
-    assert b'href="/about"' in response.data
     assert b"/api/business-settings" in response.data
-    assert b"A premium update is available." in response.data
     assert b"renderReportSkeleton" in response.data
     assert b"skeleton-stage-stats" in response.data
     assert b"skeleton-stage-chart" in response.data
@@ -422,6 +426,54 @@ def test_check_updates_proxy(client, monkeypatch):
     assert response.status_code == 200
     assert payload["update_available"] is True
     assert payload["message"] == "A premium update is available."
+
+
+def test_access_status_without_stored_license_returns_upgrade(client):
+    response = client.post("/api/access-status", json={})
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["authorized"] is False
+    assert payload["upgrade_required"] is True
+
+
+def test_access_status_proxies_signed_device_check(client, monkeypatch):
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"authorized": True, "identity": {"status": "active"}}
+
+    captured = {}
+
+    def post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setenv("GATEKEEPER_JWT_SECRET", "test-gatekeeper-jwt-secret")
+    monkeypatch.setattr("app.requests.post", post)
+
+    response = client.post("/api/access-status", json={"license_key": "DEMO123"}, headers=DEVICE_HEADERS)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["authorized"] is True
+    assert payload["upgrade_required"] is False
+    assert captured["url"] == "http://gatekeeper.test/device-access"
+    assert captured["json"]["license_key"] == "DEMO123"
+    assert captured["json"]["stats"] == {}
+    assert captured["json"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]
+    assert captured["headers"]["Authorization"].startswith("Bearer ")
+    assert len(captured["headers"]["X-Payload-SHA256"]) == 64
+    assert captured["headers"]["X-Device-HMAC"] == DEVICE_HEADERS["X-Device-HMAC"]
+    assert captured["timeout"] == 2.0
 
 
 def test_strategist_feedback_proxy(client, monkeypatch):

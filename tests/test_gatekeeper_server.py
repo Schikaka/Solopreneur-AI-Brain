@@ -210,6 +210,19 @@ def test_gatekeeper_requires_signed_request():
     assert "token" in response.get_json()["error"].lower()
 
 
+def test_gatekeeper_device_access_authorizes_signed_device():
+    client = create_app().test_client()
+    payload = gatekeeper_payload({}, "DEMO123", device_extra("DEMO123"))
+
+    response = client.post("/device-access", json=payload, headers=signed_headers(payload))
+    body = response.get_json()
+
+    assert response.status_code == 200
+    assert body["authorized"] is True
+    assert body["identity"]["status"] in {"locked", "matched"}
+    assert body["identity"]["device_fingerprint"]
+
+
 def test_gatekeeper_rejects_payload_hash_mismatch():
     client = create_app().test_client()
     payload = gatekeeper_payload({}, "DEMO123")

@@ -2688,6 +2688,47 @@ def create_app():
             }
         )
 
+    @app.post("/device-access")
+    def device_access():
+        payload = request.get_json(silent=True) or {}
+        license_key = str(payload.get("license_key", "")).strip()
+        signed_extra = {}
+        for key in ("hardware_id", "device_hmac", "session_token"):
+            if key in payload:
+                signed_extra[key] = str(payload.get(key, "")).strip()
+        signed_payload = gatekeeper_payload({}, license_key, signed_extra or None)
+        TENANT_ID.set(_tenant_id(license_key))
+
+        try:
+            _verify_signed_payload(signed_payload)
+            _verify_device_session_token(payload.get("session_token", ""), license_key, payload.get("hardware_id", ""))
+        except TokenError as exc:
+            log_event(logging.WARNING, "device_access_rejected", reason=str(exc))
+            return jsonify({"authorized": False, "identity": {"reason": str(exc)}}), 401
+
+        lock_result = license_store.validate_device_lock(
+            license_key,
+            payload.get("hardware_id", ""),
+            payload.get("device_hmac", ""),
+            ip=_extract_client_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+            path=request.path,
+        )
+        if not lock_result["ok"]:
+            log_event(logging.WARNING, "device_access_denied", reason=lock_result.get("reason"))
+            return jsonify({"authorized": False, "identity": {"reason": lock_result.get("reason")}}), 403
+
+        log_event(logging.INFO, "device_access_authorized", hardware_status=lock_result.get("status"))
+        return jsonify(
+            {
+                "authorized": True,
+                "identity": {
+                    "status": lock_result.get("status"),
+                    "device_fingerprint": lock_result.get("device_fingerprint"),
+                },
+            }
+        )
+
     @app.post("/feedback")
     def strategist_feedback():
         payload = request.get_json(silent=True) or {}

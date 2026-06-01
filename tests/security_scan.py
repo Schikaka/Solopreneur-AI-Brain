@@ -240,9 +240,27 @@ def scan_static_controls(base_dir):
             "required": ("Math Verified", "math_verified", "math_anomaly_detected"),
         },
         {
-            "name": "Client HTTPS AJAX guard",
+            "name": "Invisible premium access surface",
             "path": "templates/index.html",
-            "required": ("forceHttpsUrl", "Upgrade to Pro", "dashboard-upgrade-link"),
+            "required": ("forceHttpsUrl", "access-splash", "Upgrade to Elite", "verifyStoredAccess", "/api/access-status"),
+            "forbidden": (
+                "Upgrade to Pro",
+                "dashboard-upgrade-link",
+                "startup-license-key",
+                "License Key",
+                "/api/system-status",
+                "/api/check-updates",
+            ),
+        },
+        {
+            "name": "Invisible access backend proxy",
+            "path": "app.py",
+            "required": ("/api/access-status", "/device-access", "_signed_gatekeeper_headers", "upgrade_required"),
+        },
+        {
+            "name": "Gatekeeper device access handshake",
+            "path": "gatekeeper_server.py",
+            "required": ("/device-access", "device_access_authorized", "validate_device_lock", "_verify_device_session_token"),
         },
         {
             "name": "Multi-channel CSV upload UI",
