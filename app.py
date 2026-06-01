@@ -304,6 +304,35 @@ def create_app(test_config=None):
                 }
             ), 503
 
+    @app.post("/api/feedback")
+    def strategist_feedback():
+        payload = request.get_json(silent=True) or {}
+        message = str(payload.get("message", "")).strip()
+        if not message:
+            return jsonify({"error": "Feedback message is required."}), 400
+
+        outbound_payload = {
+            "message": message[:1200],
+            "category": str(payload.get("category", "feature_request")).strip()[:80] or "feature_request",
+            "page": str(payload.get("page", "/")).strip()[:160] or "/",
+            "email": str(payload.get("email", "")).strip()[:160],
+            "license_key": str(payload.get("license_key", "")).strip(),
+            "app_version": app.config["APP_VERSION"],
+        }
+        try:
+            response = requests.post(f"{_gatekeeper_url()}/feedback", json=outbound_payload, timeout=2.0)
+            response.raise_for_status()
+            return jsonify(response.json()), response.status_code
+        except requests.HTTPError:
+            error_payload = {}
+            try:
+                error_payload = response.json()
+            except Exception:
+                error_payload = {"error": "Feedback could not be sent."}
+            return jsonify(error_payload), response.status_code
+        except Exception:
+            return jsonify({"error": "Feedback could not be sent.", "stability_notice": STABILITY_NOTICE}), 503
+
     @app.get("/api/compliance-health")
     def compliance_health():
         try:

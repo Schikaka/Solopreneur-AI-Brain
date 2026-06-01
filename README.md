@@ -56,6 +56,10 @@ Set these environment variables before deploying:
 - `DOMAIN_URL`
 - `SQLCIPHER_REQUIRED=1`
 - `WAF_HEADER_CHECK=1`
+- `HEALTH_ALERT_WEBHOOK_URL`
+- `HEALTH_ALERT_LATENCY_SECONDS=2`
+- `HEALTH_ALERT_COOLDOWN_SECONDS=60`
+- `STRATEGIST_FEEDBACK_WEBHOOK_URL`
 
 The Gatekeeper stores license hashes in `licenses_store.db` through SQLCipher when
 `pysqlcipher3` is installed. Production deployments must set
@@ -68,7 +72,11 @@ structured logs. Demo licenses are limited to 5 report/refinement requests per
 hour, and elite licenses are limited to 30 per hour. Set
 `RATELIMIT_STORAGE_URI` to a Redis-compatible URL for shared production quota
 state; otherwise the app falls back to in-memory limiter storage. Set `REDIS_URL`
-to persist fallback cache entries outside process memory.
+to persist fallback cache entries outside process memory. Set
+`HEALTH_ALERT_WEBHOOK_URL` to a Slack, Discord, or incident webhook to receive a
+POST alert whenever a request crosses `HEALTH_ALERT_LATENCY_SECONDS`. Set
+`STRATEGIST_FEEDBACK_WEBHOOK_URL` if strategist feedback events should also be
+forwarded to an internal channel.
 
 ## How To Deploy On Render
 
@@ -127,6 +135,50 @@ export DOMAIN_URL=https://<your-render-service>.onrender.com
 ```bash
 render blueprints validate
 ```
+
+## Cloudflare CDN Setup
+
+Use Cloudflare in front of the Render service after the direct Render URL passes
+the launch checklist.
+
+1. Add the production domain to Cloudflare and update the registrar nameservers.
+2. In DNS, create a proxied CNAME for the app hostname, for example
+   `app.example.com -> narrativeai-gatekeeper.onrender.com`. Keep ownership or
+   verification CNAME records DNS-only. Cloudflare documents proxied A, AAAA,
+   and CNAME records as the mode that routes web traffic through its network:
+   [Proxy status](https://developers.cloudflare.com/dns/manage-dns-records/reference/proxied-dns-records/).
+3. In SSL/TLS, set encryption mode to `Full (strict)`. Render provides a valid
+   HTTPS certificate, and Cloudflare requires a valid origin certificate for
+   this mode:
+   [Full (strict)](https://developers.cloudflare.com/ssl/origin-configuration/ssl-modes/full-strict/).
+4. Update Render environment variables:
+   - `DOMAIN_URL=https://app.example.com`
+   - `ALLOWED_HOSTS=app.example.com,narrativeai-gatekeeper.onrender.com`
+   - `WAF_HEADER_CHECK=1`
+5. Add Cloudflare Cache Rules:
+   - Rule 1, Bypass cache for dynamic and sensitive routes:
+     `/api/*`, `/refine`, `/feedback`, `/stripe/webhook`, `/admin/*`,
+     `/healthz`, `/readyness`, and `/readiness`.
+   - Rule 2, Eligible for cache only for static browser assets, for example
+     `/static/*`, with browser TTL set to respect origin headers.
+   - Do not cache the app shell HTML because it uses per-request CSP nonces and
+     license-gated client state.
+   Cloudflare's Cache Rules support path expressions and a Bypass cache action:
+   [Cache Rules settings](https://developers.cloudflare.com/cache/how-to/cache-rules/settings/).
+6. Enable Bot controls:
+   - Free or Pro launch: enable Bot Fight Mode or Super Bot Fight Mode and watch
+     Security Events during the first traffic push.
+   - Enterprise: use Bot Management with endpoint-specific policies, and skip
+     challenges for Stripe webhooks and trusted uptime monitors.
+   Cloudflare's bot solutions include Bot Fight Mode, Super Bot Fight Mode, and
+   Enterprise Bot Management:
+   [Bot solutions](https://developers.cloudflare.com/bots/).
+7. Verify the edge:
+   - `curl -I https://app.example.com/healthz` returns HSTS and `200`.
+   - `curl -I https://app.example.com/api/system-status` returns `Cache-Control:
+     no-store` or a Cloudflare dynamic response.
+   - Stripe test webhooks still reach `/stripe/webhook`.
+   - A generated report still completes from the public domain.
 
 ## Launch Day Checklist
 

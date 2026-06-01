@@ -260,6 +260,31 @@ def scan_static_controls(base_dir):
             "required": ("Strategic Attribution", "channel_metrics", "budget reallocation", "awareness channels create demand"),
         },
         {
+            "name": "Proactive health alerts",
+            "path": "gatekeeper_server.py",
+            "required": ("HEALTH_ALERT_WEBHOOK_URL", "HEALTH_ALERT_LATENCY_SECONDS", "send_proactive_health_alert", "latency_seconds"),
+        },
+        {
+            "name": "Strategist feedback gatekeeper route",
+            "path": "gatekeeper_server.py",
+            "required": ("/feedback", "strategist_feedback_received", "STRATEGIST_FEEDBACK_WEBHOOK_URL"),
+        },
+        {
+            "name": "Strategist feedback client proxy",
+            "path": "app.py",
+            "required": ("/api/feedback", "/feedback", "Feedback message is required."),
+        },
+        {
+            "name": "Strategist feedback dashboard button",
+            "path": "templates/index.html",
+            "required": ("Suggest a Feature", "feedback-panel", "/api/feedback", "submitStrategistFeedback"),
+        },
+        {
+            "name": "Cloudflare CDN guide",
+            "path": "README.md",
+            "required": ("Cloudflare CDN Setup", "Cache Rules", "Bot Management", "Full (strict)", "/api/*"),
+        },
+        {
             "name": "Elite privacy guarantee",
             "path": "templates/about.html",
             "required": ("Elite Privacy Guarantee", "Zero raw CSV retention", "Fact-Check Lock", "Protected access boundary"),

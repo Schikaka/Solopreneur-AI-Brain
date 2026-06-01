@@ -49,6 +49,7 @@ ELITE_RATE_LIMIT = "30 per hour"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 HONEY_POT_PATH = "/api/v1/debug_admin"
 HONEYPOT_BLACKLIST = set()
+HEALTH_ALERT_LAST_SENT_AT = {}
 STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300
 CMO_PILLARS = ("Execution Efficiency", "Campaign Momentum", "Optimization Pathways")
 STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
@@ -426,6 +427,13 @@ def _now_latency_ms():
     return round((time.perf_counter() - started_at) * 1000, 2)
 
 
+def _request_latency_seconds():
+    started_at = REQUEST_STARTED_AT.get()
+    if started_at is None:
+        return 0.0
+    return max(time.perf_counter() - started_at, 0.0)
+
+
 class JsonLogFormatter(logging.Formatter):
     def format(self, record):
         payload = {
@@ -467,6 +475,96 @@ def log_event(level, event, **fields):
             "extra_fields": fields,
         },
     )
+
+
+def _first_env_value(*names):
+    for name in names:
+        value = os.getenv(name, "").strip()
+        if value:
+            return value
+    return ""
+
+
+def _health_alert_webhook_url():
+    return _first_env_value("HEALTH_ALERT_WEBHOOK_URL", "PROACTIVE_HEALTH_WEBHOOK_URL", "ALERT_WEBHOOK_URL")
+
+
+def _feedback_webhook_url():
+    return _first_env_value("STRATEGIST_FEEDBACK_WEBHOOK_URL", "FEEDBACK_WEBHOOK_URL")
+
+
+def _truncate_text(value, limit):
+    normalized = re.sub(r"\s+", " ", str(value or "")).strip()
+    return normalized[:limit]
+
+
+def send_proactive_health_alert(payload):
+    webhook_url = _health_alert_webhook_url()
+    if not webhook_url:
+        return False
+
+    try:
+        requests.post(webhook_url, json=payload, timeout=_env_float("HEALTH_ALERT_TIMEOUT_SECONDS", 1.5))
+        log_event(
+            logging.WARNING,
+            "proactive_health_alert_sent",
+            path=payload.get("path"),
+            status_code=payload.get("status_code"),
+            latency_seconds=payload.get("latency_seconds"),
+        )
+        return True
+    except Exception as exc:
+        log_event(logging.ERROR, "proactive_health_alert_failed", error=str(exc), path=payload.get("path"))
+        return False
+
+
+def maybe_send_proactive_health_alert(response, latency_seconds):
+    threshold = _env_float("HEALTH_ALERT_LATENCY_SECONDS", 2.0)
+    if latency_seconds <= threshold or not _health_alert_webhook_url():
+        return False
+
+    cooldown_seconds = _env_float("HEALTH_ALERT_COOLDOWN_SECONDS", 60.0)
+    alert_key = f"{request.method}:{request.path}"
+    now = time.monotonic()
+    last_sent_at = HEALTH_ALERT_LAST_SENT_AT.get(alert_key, 0.0)
+    if cooldown_seconds > 0 and now - last_sent_at < cooldown_seconds:
+        return False
+
+    HEALTH_ALERT_LAST_SENT_AT[alert_key] = now
+    latency_label = f"{latency_seconds:.3f}s"
+    payload = {
+        "text": f"NarrativeAI latency alert: {request.method} {request.path} took {latency_label}.",
+        "content": f"NarrativeAI latency alert: {request.method} {request.path} took {latency_label}.",
+        "service": "narrativeai-gatekeeper",
+        "event": "proactive_health_alert",
+        "method": request.method,
+        "path": request.path,
+        "status_code": response.status_code,
+        "latency_seconds": round(latency_seconds, 3),
+        "threshold_seconds": threshold,
+        "request_id": REQUEST_ID.get(),
+        "tenant_id": TENANT_ID.get(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    return send_proactive_health_alert(payload)
+
+
+def forward_strategist_feedback(feedback_event):
+    webhook_url = _feedback_webhook_url()
+    if not webhook_url:
+        return False
+
+    payload = {
+        "text": f"NarrativeAI strategist feedback: {feedback_event['message']}",
+        "content": f"NarrativeAI strategist feedback: {feedback_event['message']}",
+        "event": feedback_event,
+    }
+    try:
+        requests.post(webhook_url, json=payload, timeout=_env_float("FEEDBACK_WEBHOOK_TIMEOUT_SECONDS", 2.0))
+        return True
+    except Exception as exc:
+        log_event(logging.ERROR, "strategist_feedback_webhook_failed", error=str(exc))
+        return False
 
 
 class AuditReportStore:
@@ -2420,17 +2518,21 @@ def create_app():
 
     @app.after_request
     def finish_request_context(response):
+        latency_seconds = _request_latency_seconds()
         response.headers["X-Request-ID"] = REQUEST_ID.get()
         response.headers["Strict-Transport-Security"] = "max-age=63072000; includeSubDomains; preload"
         response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Response-Time-ms"] = str(round(latency_seconds * 1000, 2))
         if request.path in {"/verify-and-generate", "/refine"} or request.path.startswith("/admin/audit/"):
             response.headers["Cache-Control"] = "no-store"
+        maybe_send_proactive_health_alert(response, latency_seconds)
         log_event(
             logging.INFO,
             "request_complete",
             method=request.method,
             path=request.path,
             status_code=response.status_code,
+            latency_seconds=round(latency_seconds, 3),
         )
         return response
 
@@ -2468,6 +2570,37 @@ def create_app():
                 "message": "A premium update is available." if update_available else "",
             }
         )
+
+    @app.post("/feedback")
+    def strategist_feedback():
+        payload = request.get_json(silent=True) or {}
+        message = _truncate_text(payload.get("message") or payload.get("feedback"), 1200)
+        if len(message) < 3:
+            return jsonify({"error": "Feedback message is required."}), 400
+
+        license_key = str(payload.get("license_key", "")).strip()
+        feedback_event = {
+            "event": "strategist_feedback",
+            "message": message,
+            "category": _truncate_text(payload.get("category", "feature_request"), 80) or "feature_request",
+            "page": _truncate_text(payload.get("page", "/"), 160) or "/",
+            "email": _truncate_text(payload.get("email", ""), 160),
+            "app_version": _truncate_text(payload.get("app_version", _current_app_version()), 40),
+            "tenant_id": _tenant_id(license_key),
+            "request_id": REQUEST_ID.get(),
+            "received_at": datetime.now(timezone.utc).isoformat(),
+        }
+        forwarded = forward_strategist_feedback(feedback_event)
+        log_event(
+            logging.INFO,
+            "strategist_feedback_received",
+            category=feedback_event["category"],
+            page=feedback_event["page"],
+            has_email=bool(feedback_event["email"]),
+            forwarded=forwarded,
+            message_length=len(message),
+        )
+        return jsonify({"ok": True, "status": "received", "forwarded": forwarded}), 202
 
     @app.post("/stripe/webhook")
     def stripe_webhook():

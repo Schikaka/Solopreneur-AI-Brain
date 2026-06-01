@@ -27,6 +27,7 @@ OTHER_DEVICE_ID = "b" * 64
 
 @pytest.fixture(autouse=True)
 def secure_gatekeeper_env(monkeypatch, tmp_path):
+    gatekeeper_server.HEALTH_ALERT_LAST_SENT_AT.clear()
     monkeypatch.setenv("APP_ENV", "testing")
     monkeypatch.setenv("DATABASE_ENCRYPTION_KEY", "test-database-encryption-key")
     monkeypatch.setenv("GATEKEEPER_JWT_SECRET", "test-gatekeeper-jwt-secret")
@@ -35,6 +36,11 @@ def secure_gatekeeper_env(monkeypatch, tmp_path):
     monkeypatch.setenv("SEMANTIC_FIREWALL_AI", "0")
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("EMERGENT_LLM_KEY", raising=False)
+    monkeypatch.delenv("HEALTH_ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("PROACTIVE_HEALTH_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("ALERT_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("STRATEGIST_FEEDBACK_WEBHOOK_URL", raising=False)
+    monkeypatch.delenv("FEEDBACK_WEBHOOK_URL", raising=False)
 
 
 def signed_headers(payload):
@@ -265,6 +271,76 @@ def test_check_updates_route_reports_premium_update(monkeypatch):
     assert payload["latest_version"] == "1.1.0"
     assert payload["update_available"] is True
     assert payload["message"] == "A premium update is available."
+
+
+def test_proactive_health_alert_posts_slow_request(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 204
+
+    def post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("HEALTH_ALERT_WEBHOOK_URL", "https://hooks.example.test/health")
+    monkeypatch.setenv("HEALTH_ALERT_LATENCY_SECONDS", "-1")
+    monkeypatch.setenv("HEALTH_ALERT_COOLDOWN_SECONDS", "0")
+    monkeypatch.setattr("gatekeeper_server.requests.post", post)
+    client = create_app().test_client()
+
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.headers["X-Response-Time-ms"]
+    assert captured["url"] == "https://hooks.example.test/health"
+    assert captured["timeout"] == 1.5
+    assert captured["json"]["event"] == "proactive_health_alert"
+    assert captured["json"]["path"] == "/healthz"
+    assert captured["json"]["status_code"] == 200
+    assert "latency alert" in captured["json"]["text"].lower()
+
+
+def test_strategist_feedback_route_sanitizes_and_forwards(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 204
+
+    def post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("STRATEGIST_FEEDBACK_WEBHOOK_URL", "https://hooks.example.test/feedback")
+    monkeypatch.setattr("gatekeeper_server.requests.post", post)
+    client = create_app().test_client()
+
+    response = client.post(
+        "/feedback",
+        json={
+            "message": "Add a weekly pacing board.",
+            "email": "founder@example.com",
+            "page": "/",
+            "category": "feature_request",
+            "license_key": "DEMO123",
+            "app_version": "1.0.0",
+        },
+    )
+    payload = response.get_json()
+    webhook_payload = gatekeeper_server.json.dumps(captured["json"])
+
+    assert response.status_code == 202
+    assert payload["ok"] is True
+    assert payload["forwarded"] is True
+    assert captured["url"] == "https://hooks.example.test/feedback"
+    assert captured["timeout"] == 2.0
+    assert captured["json"]["event"]["message"] == "Add a weekly pacing board."
+    assert captured["json"]["event"]["tenant_id"].startswith("tenant_")
+    assert "DEMO123" not in webhook_payload
 
 
 def test_business_settings_store_stripe_payment_link():

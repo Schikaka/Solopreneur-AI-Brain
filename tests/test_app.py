@@ -145,6 +145,10 @@ def test_index_has_nonce_csp(client):
     assert b"X-Device-ID" in response.data
     assert b"X-Device-HMAC" in response.data
     assert b"renewSecureSession" in response.data
+    assert b"Suggest a Feature" in response.data
+    assert b'id="feedback-panel"' in response.data
+    assert b"/api/feedback" in response.data
+    assert b"submitStrategistFeedback" in response.data
 
 
 def test_about_page_contains_elite_privacy_guarantee(client):
@@ -413,6 +417,46 @@ def test_check_updates_proxy(client, monkeypatch):
     assert response.status_code == 200
     assert payload["update_available"] is True
     assert payload["message"] == "A premium update is available."
+
+
+def test_strategist_feedback_proxy(client, monkeypatch):
+    class Response:
+        status_code = 202
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True, "status": "received", "forwarded": False}
+
+    captured = {}
+
+    def post(url, json, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.post", post)
+
+    response = client.post(
+        "/api/feedback",
+        json={
+            "message": "Add a monthly export board.",
+            "email": "owner@example.com",
+            "license_key": "DEMO123",
+            "page": "/",
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 202
+    assert payload["ok"] is True
+    assert captured["url"] == "http://gatekeeper.test/feedback"
+    assert captured["timeout"] == 2.0
+    assert captured["json"]["message"] == "Add a monthly export board."
+    assert captured["json"]["app_version"] == "1.0.0"
 
 
 def test_app_has_no_upload_dir_config(client):

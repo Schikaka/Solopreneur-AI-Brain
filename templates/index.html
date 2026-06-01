@@ -47,19 +47,23 @@
       }
 
       body.app-locked .shell,
-      body.app-locked .privacy-footer {
+      body.app-locked .privacy-footer,
+      body.app-locked .feedback-launcher,
+      body.app-locked .feedback-panel {
         visibility: hidden;
       }
 
       button,
       input,
-      select {
+      select,
+      textarea {
         font: inherit;
       }
 
       button,
       input,
       select,
+      textarea,
       a {
         transition:
           border-color var(--ease),
@@ -74,6 +78,7 @@
       button:focus-visible,
       input:focus-visible,
       select:focus-visible,
+      textarea:focus-visible,
       a:focus-visible {
         outline: 3px solid rgba(37, 99, 235, 0.86);
         outline-offset: 3px;
@@ -1001,6 +1006,128 @@
         background: #dcfce7;
       }
 
+      .feedback-launcher {
+        position: fixed;
+        z-index: 18;
+        left: 18px;
+        bottom: 18px;
+        min-height: 38px;
+        padding: 0 14px;
+        border: 1px solid #cbd5e1;
+        border-radius: 999px;
+        background: var(--surface-strong);
+        color: white;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 800;
+        box-shadow: 0 18px 42px rgba(15, 23, 42, 0.18);
+      }
+
+      .feedback-launcher:hover,
+      .feedback-launcher[aria-expanded="true"] {
+        background: #1f2937;
+        transform: translateY(-1px);
+      }
+
+      .feedback-panel {
+        position: fixed;
+        z-index: 19;
+        left: 18px;
+        bottom: 66px;
+        width: min(340px, calc(100vw - 36px));
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.2);
+      }
+
+      .feedback-panel[hidden] {
+        display: none;
+      }
+
+      .feedback-panel header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .feedback-panel h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .feedback-form {
+        display: grid;
+        gap: 10px;
+      }
+
+      .feedback-field {
+        display: grid;
+        gap: 6px;
+      }
+
+      .feedback-field label {
+        color: var(--slate);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .feedback-field input,
+      .feedback-field textarea {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .feedback-field input {
+        min-height: 38px;
+        padding: 0 11px;
+      }
+
+      .feedback-field textarea {
+        min-height: 96px;
+        padding: 10px 11px;
+        resize: vertical;
+      }
+
+      .feedback-field input:focus,
+      .feedback-field textarea:focus {
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        outline: none;
+      }
+
+      .feedback-field input:focus-visible,
+      .feedback-field textarea:focus-visible {
+        outline: 3px solid rgba(37, 99, 235, 0.86);
+        outline-offset: 3px;
+        box-shadow: var(--focus-ring);
+      }
+
+      .feedback-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+      }
+
+      .feedback-status {
+        min-height: 19px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .feedback-status.success {
+        color: var(--green);
+        font-weight: 750;
+      }
+
       .modal-backdrop {
         position: fixed;
         inset: 0;
@@ -1199,6 +1326,7 @@
         .drawer-close:hover,
         .button:hover,
         .copy-button:hover,
+        .feedback-launcher:hover,
         .privacy-badge:hover,
         .modal-close:hover,
         .sidebar-tab:hover {
@@ -1345,6 +1473,18 @@
 
         .report-title {
           text-align: left;
+        }
+
+        .feedback-launcher {
+          left: 10px;
+          bottom: 10px;
+        }
+
+        .feedback-panel {
+          right: 10px;
+          left: 10px;
+          bottom: 58px;
+          width: auto;
         }
       }
 
@@ -1583,6 +1723,28 @@
       <button class="privacy-badge" id="privacy-open" type="button" aria-label="Open privacy and security details">Privacy & Security</button>
     </footer>
 
+    <button class="feedback-launcher" id="feedback-open" type="button" aria-label="Open strategist feedback form" aria-controls="feedback-panel" aria-expanded="false">Suggest a Feature</button>
+    <section class="feedback-panel" id="feedback-panel" role="dialog" aria-modal="false" aria-labelledby="feedback-title" hidden>
+      <header>
+        <h2 id="feedback-title">Strategist Feedback</h2>
+        <button class="modal-close" id="feedback-close" type="button" aria-label="Close strategist feedback form">&times;</button>
+      </header>
+      <form class="feedback-form" id="feedback-form">
+        <div class="feedback-field">
+          <label for="feedback-message">Feature Suggestion</label>
+          <textarea id="feedback-message" name="message" maxlength="1200" required aria-label="Feature suggestion"></textarea>
+        </div>
+        <div class="feedback-field">
+          <label for="feedback-email">Email</label>
+          <input id="feedback-email" name="email" type="email" autocomplete="email" aria-label="Email for feedback follow-up">
+        </div>
+        <div class="feedback-actions">
+          <button class="copy-button" id="feedback-submit" type="submit" aria-label="Send strategist feedback">Send</button>
+        </div>
+        <div class="feedback-status" id="feedback-status" role="status" aria-live="polite"></div>
+      </form>
+    </section>
+
     <div class="modal-backdrop" id="privacy-modal" hidden>
       <section class="privacy-modal" role="dialog" aria-modal="true" aria-labelledby="privacy-title">
         <header>
@@ -1637,6 +1799,14 @@
       const privacyOpenButton = document.querySelector("#privacy-open");
       const privacyCloseButton = document.querySelector("#privacy-close");
       const privacyModal = document.querySelector("#privacy-modal");
+      const feedbackOpenButton = document.querySelector("#feedback-open");
+      const feedbackCloseButton = document.querySelector("#feedback-close");
+      const feedbackPanel = document.querySelector("#feedback-panel");
+      const feedbackForm = document.querySelector("#feedback-form");
+      const feedbackMessage = document.querySelector("#feedback-message");
+      const feedbackEmail = document.querySelector("#feedback-email");
+      const feedbackSubmitButton = document.querySelector("#feedback-submit");
+      const feedbackStatus = document.querySelector("#feedback-status");
       const logoStorageKey = "narrativeai.agencyLogo";
       const licenseStorageKey = "narrativeai.licenseKey";
       const deviceStorageKey = "narrativeai.deviceIdentity";
@@ -1921,6 +2091,70 @@
 
       function getLicenseKey() {
         return (localStorage.getItem(licenseStorageKey) || "").trim();
+      }
+
+      function setFeedbackStatus(message = "", type = "") {
+        feedbackStatus.className = type ? `feedback-status ${type}` : "feedback-status";
+        feedbackStatus.textContent = message;
+      }
+
+      function openFeedbackPanel() {
+        feedbackPanel.hidden = false;
+        feedbackOpenButton.setAttribute("aria-expanded", "true");
+        setFeedbackStatus("");
+        window.setTimeout(() => feedbackMessage.focus(), 20);
+      }
+
+      function closeFeedbackPanel(options = {}) {
+        feedbackPanel.hidden = true;
+        feedbackOpenButton.setAttribute("aria-expanded", "false");
+        if (options.focus !== false) {
+          feedbackOpenButton.focus();
+        }
+      }
+
+      async function submitStrategistFeedback(event) {
+        event.preventDefault();
+        const message = feedbackMessage.value.trim();
+        if (!message) {
+          setFeedbackStatus("Add a feature suggestion first.");
+          feedbackMessage.focus();
+          return;
+        }
+
+        feedbackSubmitButton.disabled = true;
+        feedbackSubmitButton.textContent = "Sending...";
+        setFeedbackStatus("Sending feedback...");
+
+        try {
+          const { response, data } = await fetchJsonWithTimeout("/api/feedback", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            timeoutMs: 6000,
+            body: JSON.stringify({
+              message,
+              email: feedbackEmail.value.trim(),
+              category: "feature_request",
+              page: window.location.pathname,
+              license_key: getLicenseKey(),
+              app_version: appVersion
+            })
+          });
+
+          if (!response.ok) {
+            throw new Error(data.error || "Feedback could not be sent.");
+          }
+
+          feedbackMessage.value = "";
+          feedbackEmail.value = "";
+          setFeedbackStatus("Feedback sent.", "success");
+          window.setTimeout(() => closeFeedbackPanel(), 900);
+        } catch (error) {
+          setFeedbackStatus(stabilityMessageFor(error, "Feedback could not be sent."));
+        } finally {
+          feedbackSubmitButton.disabled = false;
+          feedbackSubmitButton.textContent = "Send";
+        }
       }
 
       function forceHttpsUrl(url) {
@@ -3036,9 +3270,23 @@
           closePrivacyModal();
         }
       });
+      feedbackOpenButton.addEventListener("click", () => {
+        if (feedbackPanel.hidden) {
+          openFeedbackPanel();
+          return;
+        }
+        closeFeedbackPanel();
+      });
+      feedbackCloseButton.addEventListener("click", closeFeedbackPanel);
+      feedbackForm.addEventListener("submit", submitStrategistFeedback);
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !privacyModal.hidden) {
           closePrivacyModal();
+          return;
+        }
+
+        if (event.key === "Escape" && !feedbackPanel.hidden) {
+          closeFeedbackPanel();
           return;
         }
 
