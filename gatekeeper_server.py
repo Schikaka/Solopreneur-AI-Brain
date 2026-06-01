@@ -44,7 +44,8 @@ load_dotenv()
 BASE_DIR = Path(__file__).parent
 APP_VERSION = "1.0.0"
 OPENAI_TIMEOUT_SECONDS = 5
-GATEKEEPER_LIMIT = "5 per minute"
+DEMO_RATE_LIMIT = "5 per hour"
+ELITE_RATE_LIMIT = "30 per hour"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 HONEY_POT_PATH = "/api/v1/debug_admin"
 HONEYPOT_BLACKLIST = set()
@@ -56,6 +57,8 @@ DIRECTIVE_GOALS = ("Budget Request", "Performance Fix", "Retention")
 REFINEMENT_MODEL = "gpt-4o-mini"
 AUDIT_TRACE_MARKER = "AUDIT_TRACE_JSON"
 MATH_ANOMALY_THRESHOLD = 0.01
+TRUTH_VERIFICATION_ABSOLUTE_TOLERANCE = 0.005
+RATE_LIMITED_ENDPOINTS = {"verify_and_generate", "refine"}
 FORBIDDEN_NARRATIVE_TERMS = (
     "gatekeeper",
     "license",
@@ -401,10 +404,6 @@ def _version_parts(version):
 
 def is_newer_version(latest_version, current_version):
     return _version_parts(latest_version) > _version_parts(current_version)
-
-
-def _rate_limit_count():
-    return _env_int("GATEKEEPER_REPORTS_PER_MINUTE", 5)
 
 
 def _tenant_id(license_key):
@@ -936,28 +935,57 @@ def _extract_client_ip():
     return request.remote_addr or "unknown"
 
 
-def _configure_rate_limiting(app):
+def _license_key_from_request_payload():
+    payload = request.get_json(silent=True) or {}
+    return str(payload.get("license_key", "")).strip()
+
+
+def _license_rate_limit_identity():
+    license_key = _license_key_from_request_payload()
+    if license_key:
+        key_hash = hashlib.sha256(license_key.encode("utf-8")).hexdigest()
+        return f"license:{key_hash}:{request.endpoint or request.path}"
+    return f"ip:{_extract_client_ip()}:{request.endpoint or request.path}"
+
+
+def _license_rate_limit_value(license_store):
+    license_key = _license_key_from_request_payload()
+    try:
+        tier = license_store.license_tier(license_key)
+    except Exception as exc:
+        log_event(logging.WARNING, "rate_limit_tier_lookup_failed", error=str(exc))
+        tier = "demo"
+    return ELITE_RATE_LIMIT if tier == "elite" else DEMO_RATE_LIMIT
+
+
+def _parse_hourly_limit(limit_value):
+    match = re.match(r"^\s*(\d+)\s*(?:/|per)\s*hour\s*$", str(limit_value or ""), re.IGNORECASE)
+    return int(match.group(1)) if match else 5
+
+
+def _configure_rate_limiting(app, license_store):
     if Limiter is not None:
         return Limiter(
-            key_func=get_remote_address,
+            key_func=_license_rate_limit_identity,
             app=app,
-            storage_uri=os.getenv("RATELIMIT_STORAGE_URI", "memory://"),
+            storage_uri=os.getenv("RATELIMIT_STORAGE_URI") or os.getenv("REDIS_URL") or "memory://",
             default_limits=[],
             headers_enabled=True,
+            in_memory_fallback_enabled=True,
         )
 
     request_log = {}
-    window_seconds = 60
+    window_seconds = 3600
 
     @app.before_request
     def fallback_rate_limit():
-        if request.endpoint != "verify_and_generate":
+        if request.endpoint not in RATE_LIMITED_ENDPOINTS:
             return None
 
         now = time.monotonic()
-        key = (_extract_client_ip(), request.endpoint)
+        key = _license_rate_limit_identity()
         recent_hits = [hit for hit in request_log.get(key, []) if now - hit < window_seconds]
-        if len(recent_hits) >= _rate_limit_count():
+        if len(recent_hits) >= _parse_hourly_limit(_license_rate_limit_value(license_store)):
             request_log[key] = recent_hits
             return jsonify({"error": "Too many report requests. Try again later."}), 429
 
@@ -968,10 +996,10 @@ def _configure_rate_limiting(app):
     return None
 
 
-def _rate_limit(limiter):
+def _rate_limit(limiter, license_store):
     if limiter is None:
         return lambda view: view
-    return limiter.limit(os.getenv("GATEKEEPER_REPORT_LIMIT", GATEKEEPER_LIMIT))
+    return limiter.limit(lambda: _license_rate_limit_value(license_store), key_func=_license_rate_limit_identity)
 
 
 def _bearer_token():
@@ -1192,7 +1220,14 @@ def _claim_snippet(text, needles, fallback):
     return fallback
 
 
-def _build_reasoning_trace(stats, narrative, audit_context=None, anomaly_report=None, model_trace=None):
+def _build_reasoning_trace(
+    stats,
+    narrative,
+    audit_context=None,
+    anomaly_report=None,
+    model_trace=None,
+    truth_verification=None,
+):
     sanitized = _sanitized_stats_for_narrative(stats)
     top_campaign = sanitized.get("top_campaign")
     credibility_mapping = [
@@ -1263,6 +1298,13 @@ def _build_reasoning_trace(stats, narrative, audit_context=None, anomaly_report=
         },
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+    trace["TruthVerification"] = truth_verification or {
+        "ok": True,
+        "math_verified": True,
+        "checked_numbers": 0,
+        "source_fact_count": 0,
+        "unsupported_numbers": [],
+    }
     if isinstance(model_trace, dict):
         trace["ModelSuppliedTrace"] = model_trace
     return trace
@@ -1282,6 +1324,8 @@ def _numeric_source_facts(stats, audit_context=None):
     total_spend = _safe_float(sanitized.get("total_spend"))
     avg_roas = _safe_float(sanitized.get("avg_roas"))
     avg_ctr = _safe_float(sanitized.get("avg_ctr"))
+    if avg_roas:
+        facts.append({"key": "avg_roas", "value": avg_roas, "type": "multiplier"})
     if avg_ctr:
         facts.append({"key": "avg_ctr", "value": avg_ctr, "type": "percent"})
     if avg_roas:
@@ -1297,18 +1341,33 @@ def _numeric_source_facts(stats, audit_context=None):
 
     for row in _audit_context_rows(audit_context):
         columns = row.get("columns") or {}
-        for column in ("Spend", "Revenue"):
+        for column in ("Spend", "Revenue", "Clicks", "Impressions", "Conversions"):
             cell = columns.get(column) or {}
             try:
+                fact_type = "money" if column in {"Spend", "Revenue"} else "number"
                 facts.append(
                     {
                         "key": f"row_{row.get('csv_row_index')}_{column}",
                         "value": float(cell.get("value")),
-                        "type": "money",
+                        "type": fact_type,
                     }
                 )
             except (TypeError, ValueError):
                 continue
+    for key, reference in _audit_aggregate_map(audit_context).items():
+        if not isinstance(reference, dict):
+            continue
+        try:
+            value = float(reference.get("value"))
+        except (TypeError, ValueError):
+            continue
+        if key in money_keys or reference.get("column") in {"Spend", "Revenue"}:
+            fact_type = "money"
+        elif key == "avg_roas":
+            fact_type = "multiplier"
+        else:
+            fact_type = "number"
+        facts.append({"key": f"audit_{key}", "value": value, "type": fact_type})
     return facts
 
 
@@ -1331,6 +1390,111 @@ def _extract_audited_numbers(text):
             }
         )
     return audited
+
+
+def _overlaps(span, occupied_spans):
+    start, end = span
+    return any(start < occupied_end and end > occupied_start for occupied_start, occupied_end in occupied_spans)
+
+
+def _number_context(text, start, end):
+    value = str(text or "")
+    return value[max(0, start - 36) : min(len(value), end + 36)].strip()
+
+
+def _extract_truth_numbers(text):
+    value = str(text or "")
+    extracted = []
+    occupied_spans = []
+    patterns = (
+        ("money", re.compile(r"\$([0-9][0-9,]*(?:\.\d+)?)")),
+        ("percent", re.compile(r"(?<![\w$])([0-9][0-9,]*(?:\.\d+)?)%")),
+        ("multiplier", re.compile(r"(?<![\w$])([0-9][0-9,]*(?:\.\d+)?)x(?!\w)", re.IGNORECASE)),
+        ("number", re.compile(r"(?<![\w$])([0-9][0-9,]*(?:\.\d+)?)(?![\w%x])")),
+    )
+    for number_type, pattern in patterns:
+        for match in pattern.finditer(value):
+            if _overlaps(match.span(), occupied_spans):
+                continue
+            raw_value = match.group(1)
+            try:
+                number_value = float(raw_value.replace(",", ""))
+            except ValueError:
+                continue
+            occupied_spans.append(match.span())
+            extracted.append(
+                {
+                    "type": number_type,
+                    "raw": match.group(0),
+                    "value": number_value,
+                    "context": _number_context(value, *match.span()),
+                }
+            )
+    return sorted(extracted, key=lambda item: value.find(item["raw"]))
+
+
+def _is_structural_report_number(number):
+    if number["type"] != "number":
+        return False
+    return number["value"] in {1.0, 2.0, 3.0}
+
+
+def _truth_fact_type_compatible(number_type, fact_type):
+    if number_type == "money":
+        return fact_type == "money"
+    if number_type == "percent":
+        return fact_type == "percent"
+    if number_type == "multiplier":
+        return fact_type == "multiplier"
+    return fact_type in {"number", "money", "multiplier", "percent"}
+
+
+def _truth_values_match(left, right):
+    return abs(round(float(left), 2) - round(float(right), 2)) <= TRUTH_VERIFICATION_ABSOLUTE_TOLERANCE
+
+
+def verify_truth_locked_numbers(narrative, stats, audit_context=None):
+    facts = _numeric_source_facts(stats, audit_context)
+    unsupported = []
+    checked = 0
+    for number in _extract_truth_numbers(narrative):
+        if _is_structural_report_number(number):
+            continue
+        checked += 1
+        matched = any(
+            _truth_fact_type_compatible(number["type"], fact["type"])
+            and _truth_values_match(number["value"], fact["value"])
+            for fact in facts
+        )
+        if not matched:
+            unsupported.append(
+                {
+                    "raw": number["raw"],
+                    "value": number["value"],
+                    "type": number["type"],
+                    "context": number["context"],
+                }
+            )
+
+    return {
+        "ok": not unsupported,
+        "math_verified": not unsupported,
+        "checked_numbers": checked,
+        "source_fact_count": len(facts),
+        "unsupported_numbers": unsupported,
+    }
+
+
+def _truth_corrective_message(verification_report, stats):
+    unsupported = verification_report.get("unsupported_numbers") or []
+    unsupported_summary = ", ".join(item["raw"] for item in unsupported[:8]) or "unsupported numeric claims"
+    return (
+        "Corrective Message: Truth-Verification failed because the prior draft mentioned "
+        f"{unsupported_summary}, which is not present in the locked CSV statistics. "
+        "Regenerate the report once using only exact numeric values from this locked stats JSON: "
+        f"{json.dumps(_sanitized_stats_for_narrative(stats), sort_keys=True)}. "
+        "Keep the required section structure and do not introduce any new number unless it appears exactly in the locked stats."
+    )
 
 
 def detect_math_anomalies(narrative, stats, audit_context=None, threshold=MATH_ANOMALY_THRESHOLD):
@@ -1366,14 +1530,33 @@ def detect_math_anomalies(narrative, stats, audit_context=None, threshold=MATH_A
 def _with_audit_metadata(result, stats, directive=None, audit_context=None, model_trace=None):
     cleaned_narrative, parsed_trace = _extract_hidden_audit_trace(result.get("narrative", ""))
     result["narrative"] = cleaned_narrative
+    truth_report = verify_truth_locked_numbers(cleaned_narrative, stats, audit_context)
     anomaly_report = detect_math_anomalies(cleaned_narrative, stats, audit_context)
+    if not truth_report["ok"]:
+        anomaly_report = {
+            "detected": True,
+            "details": (anomaly_report.get("details") or [])
+            + [
+                {
+                    "raw": item["raw"],
+                    "type": item["type"],
+                    "value": item["value"],
+                    "reason": "number_not_found_in_locked_csv_stats",
+                    "context": item["context"],
+                }
+                for item in truth_report["unsupported_numbers"]
+            ],
+        }
     result["math_anomaly"] = anomaly_report
+    result["truth_verification"] = truth_report
+    result["math_verified"] = bool(truth_report["ok"] and not anomaly_report.get("detected"))
     result["reasoning_trace"] = _build_reasoning_trace(
         stats,
         cleaned_narrative,
         audit_context=audit_context,
         anomaly_report=anomaly_report,
         model_trace=model_trace or parsed_trace,
+        truth_verification=truth_report,
     )
     return result
 
@@ -1503,7 +1686,11 @@ def _build_refinement_messages(stats, narrative, instruction, directive=None, au
 
 
 def _fallback_refinement(stats, narrative, instruction, directive=None):
-    if narrative and _respects_fact_lock(narrative, stats) and not _contains_forbidden_narrative_terms(narrative):
+    if (
+        narrative
+        and verify_truth_locked_numbers(narrative, stats)["ok"]
+        and not _contains_forbidden_narrative_terms(narrative)
+    ):
         return str(narrative).strip()
     return _elite_cmo_narrative(stats, directive=directive)
 
@@ -1764,6 +1951,22 @@ def _breaker_error(exc):
     return False
 
 
+def _chat_completion_content(body, purpose):
+    response_json = _call_openai_with_breaker(body, purpose=purpose)
+    token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
+    content = str(response_json["choices"][0]["message"]["content"]).strip()
+    return content, token_usage
+
+
+def _with_corrective_message(body, narrative, verification_report, stats):
+    corrected_body = json.loads(json.dumps(body))
+    corrected_body["messages"].append({"role": "assistant", "content": str(narrative or "").strip()})
+    corrected_body["messages"].append(
+        {"role": "user", "content": _truth_corrective_message(verification_report, stats)}
+    )
+    return corrected_body
+
+
 def generate_narrative_result(stats, directive=None, audit_context=None):
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("EMERGENT_LLM_KEY")
     directive = _sanitize_directive(directive)
@@ -1803,9 +2006,7 @@ def generate_narrative_result(stats, directive=None, audit_context=None):
     }
 
     try:
-        response_json = _call_openai_with_breaker(body, purpose="narrative_generation")
-        token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
-        raw_narrative = str(response_json["choices"][0]["message"]["content"]).strip()
+        raw_narrative, token_usage = _chat_completion_content(body, purpose="narrative_generation")
         narrative, model_trace = _extract_hidden_audit_trace(raw_narrative)
         source = "openai"
         if _contains_forbidden_narrative_terms(narrative) or not _has_required_cmo_sections(narrative):
@@ -1813,6 +2014,38 @@ def generate_narrative_result(stats, directive=None, audit_context=None):
             narrative = _elite_cmo_narrative(stats, directive=directive)
             model_trace = None
             source = "contract_fallback"
+        else:
+            truth_report = verify_truth_locked_numbers(narrative, stats, audit_context)
+            if not truth_report["ok"]:
+                log_event(
+                    logging.WARNING,
+                    "truth_verification_corrective_retry",
+                    unsupported_numbers=truth_report["unsupported_numbers"],
+                )
+                corrected_body = _with_corrective_message(body, narrative, truth_report, stats)
+                corrected_raw, token_usage = _chat_completion_content(
+                    corrected_body,
+                    purpose="narrative_truth_correction",
+                )
+                corrected_narrative, corrected_trace = _extract_hidden_audit_trace(corrected_raw)
+                corrected_truth = verify_truth_locked_numbers(corrected_narrative, stats, audit_context)
+                if (
+                    corrected_truth["ok"]
+                    and not _contains_forbidden_narrative_terms(corrected_narrative)
+                    and _has_required_cmo_sections(corrected_narrative)
+                ):
+                    narrative = corrected_narrative
+                    model_trace = corrected_trace
+                    source = "openai_corrected"
+                else:
+                    log_event(
+                        logging.WARNING,
+                        "truth_verification_fallback",
+                        unsupported_numbers=corrected_truth.get("unsupported_numbers", []),
+                    )
+                    narrative = _elite_cmo_narrative(stats, directive=directive)
+                    model_trace = None
+                    source = "truth_check_fallback"
         result = _with_audit_metadata({
             "narrative": narrative,
             "source": source,
@@ -1876,16 +2109,36 @@ def generate_refinement_result(stats, narrative, instruction, directive=None, au
     }
 
     try:
-        response_json = _call_openai_with_breaker(body, purpose="narrative_refinement")
-        token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
-        raw_refined = str(response_json["choices"][0]["message"]["content"]).strip()
+        raw_refined, token_usage = _chat_completion_content(body, purpose="narrative_refinement")
         refined, model_trace = _extract_hidden_audit_trace(raw_refined)
         source = "openai_refinement"
-        if _contains_forbidden_narrative_terms(refined) or not _respects_fact_lock(refined, stats):
-            log_event(logging.WARNING, "openai_refinement_fact_lock_fallback")
-            refined = _fallback_refinement(stats, narrative, instruction, directive=directive)
-            model_trace = None
-            source = "fact_check_fallback"
+        truth_report = verify_truth_locked_numbers(refined, stats, audit_context)
+        if _contains_forbidden_narrative_terms(refined) or not truth_report["ok"]:
+            log_event(
+                logging.WARNING,
+                "openai_refinement_fact_lock_corrective_retry",
+                unsupported_numbers=truth_report.get("unsupported_numbers", []),
+            )
+            corrected_body = _with_corrective_message(body, refined, truth_report, stats)
+            corrected_raw, token_usage = _chat_completion_content(
+                corrected_body,
+                purpose="refinement_truth_correction",
+            )
+            corrected_refined, corrected_trace = _extract_hidden_audit_trace(corrected_raw)
+            corrected_truth = verify_truth_locked_numbers(corrected_refined, stats, audit_context)
+            if corrected_truth["ok"] and not _contains_forbidden_narrative_terms(corrected_refined):
+                refined = corrected_refined
+                model_trace = corrected_trace
+                source = "openai_refinement_corrected"
+            else:
+                log_event(
+                    logging.WARNING,
+                    "openai_refinement_fact_lock_fallback",
+                    unsupported_numbers=corrected_truth.get("unsupported_numbers", []),
+                )
+                refined = _fallback_refinement(stats, narrative, instruction, directive=directive)
+                model_trace = None
+                source = "fact_check_fallback"
         return _with_audit_metadata({
             "narrative": refined,
             "source": source,
@@ -1926,13 +2179,22 @@ def _json_loads_or_default(raw, default):
 
 def _audit_response_payload(report_id, generation):
     anomaly = generation.get("math_anomaly") or {"detected": False, "details": []}
+    truth_verification = generation.get("truth_verification") or {
+        "ok": not bool(anomaly.get("detected")),
+        "math_verified": not bool(anomaly.get("detected")),
+        "unsupported_numbers": [],
+    }
+    math_verified = bool(generation.get("math_verified", truth_verification.get("math_verified")))
     return {
         "report_id": report_id,
         "math_anomaly_detected": bool(anomaly.get("detected")),
+        "math_verified": math_verified,
         "audit": {
             "report_id": report_id,
             "math_anomaly_detected": bool(anomaly.get("detected")),
+            "math_verified": math_verified,
             "anomaly_details": anomaly.get("details", []),
+            "truth_verification": truth_verification,
             "reasoning_trace_available": bool(generation.get("reasoning_trace")),
         },
     }
@@ -2040,8 +2302,8 @@ def create_app():
     app = Flask(__name__)
     app.config["DEBUG"] = False
     configure_structured_logging(app)
-    limiter = _configure_rate_limiting(app)
     license_store = LicenseStore()
+    limiter = _configure_rate_limiting(app, license_store)
     audit_store = AuditReportStore(license_store)
     business_settings_store = BusinessSettingsStore(license_store)
     lead_store = LeadStore(license_store)
@@ -2241,6 +2503,13 @@ def create_app():
             return jsonify({"error": "Audit report not found."}), 404
 
         trace = _json_loads_or_default(record.get("reasoning_trace"), {})
+        if not isinstance(trace, dict):
+            trace = {}
+        truth_verification = trace.get("TruthVerification") if isinstance(trace, dict) else {}
+        math_verified = bool(
+            not record["math_anomaly_detected"]
+            and (truth_verification or {}).get("math_verified", (truth_verification or {}).get("ok", True))
+        )
         trace["ReportMetadata"] = {
             "report_id": record["id"],
             "created_at": record["created_at"],
@@ -2249,6 +2518,7 @@ def create_app():
             "parent_report_id": record["parent_report_id"],
             "source": record["source"],
             "math_anomaly_detected": bool(record["math_anomaly_detected"]),
+            "math_verified": math_verified,
             "anomaly_details": _json_loads_or_default(record.get("anomaly_details_json"), []),
             "stats": _json_loads_or_default(record.get("stats_json"), {}),
             "directive": _json_loads_or_default(record.get("directive_json"), {}),
@@ -2260,12 +2530,12 @@ def create_app():
             report_source=record["source"] or "unknown",
             request_type=record["request_type"],
             badge_class="anomaly" if record["math_anomaly_detected"] else "",
-            badge_text="Math Anomaly Detected" if record["math_anomaly_detected"] else "Audit Clean",
+            badge_text="Math Anomaly Detected" if record["math_anomaly_detected"] else "Math Verified",
             trace_json=json.dumps(trace, indent=2, sort_keys=True),
         )
 
     @app.post("/verify-and-generate")
-    @_rate_limit(limiter)
+    @_rate_limit(limiter, license_store)
     def verify_and_generate():
         payload = request.get_json(silent=True) or {}
         stats = payload.get("stats")
@@ -2373,7 +2643,7 @@ def create_app():
             return jsonify({"error": f"Gatekeeper generation failed: {str(exc)}"}), 502
 
     @app.post("/refine")
-    @_rate_limit(limiter)
+    @_rate_limit(limiter, license_store)
     def refine():
         payload = request.get_json(silent=True) or {}
         stats = payload.get("stats")

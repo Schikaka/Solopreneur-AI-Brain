@@ -220,6 +220,26 @@ def scan_static_controls(base_dir):
             "required": ("/readyness", "readiness_payload", "Strict-Transport-Security", "SQLCipher is required"),
         },
         {
+            "name": "Tiered Flask-Limiter quotas",
+            "path": "gatekeeper_server.py",
+            "required": ("flask_limiter", "DEMO_RATE_LIMIT", "ELITE_RATE_LIMIT", "_license_rate_limit_value", "license_tier"),
+        },
+        {
+            "name": "SQLCipher license vault default",
+            "path": "license_store.py",
+            "required": ("licenses_store.db", "pysqlcipher3.dbapi2", "PRAGMA key", "DATABASE_ENCRYPTION_KEY", "tier"),
+        },
+        {
+            "name": "Truth-Verification middleware",
+            "path": "gatekeeper_server.py",
+            "required": ("verify_truth_locked_numbers", "Corrective Message", "truth_verification_corrective_retry", "openai_corrected"),
+        },
+        {
+            "name": "Admin Math Verified flag",
+            "path": "templates/admin.html",
+            "required": ("Math Verified", "math_verified", "math_anomaly_detected"),
+        },
+        {
             "name": "Client HTTPS AJAX guard",
             "path": "templates/index.html",
             "required": ("forceHttpsUrl", "Upgrade to Pro", "dashboard-upgrade-link"),

@@ -362,7 +362,9 @@ def get_ai_narrative_result(stats, license_key, directive=None, audit_context=No
             "audit": {
                 "report_id": None,
                 "math_anomaly_detected": False,
+                "math_verified": True,
                 "anomaly_details": [],
+                "truth_verification": {"ok": True, "math_verified": True, "unsupported_numbers": []},
                 "reasoning_trace_available": False,
             },
         }
@@ -409,7 +411,9 @@ def refine_report(stats, narrative, instruction, license_key, directive=None, re
             "audit": {
                 "report_id": None,
                 "math_anomaly_detected": False,
+                "math_verified": True,
                 "anomaly_details": [],
+                "truth_verification": {"ok": True, "math_verified": True, "unsupported_numbers": []},
                 "reasoning_trace_available": False,
             },
         }

@@ -2,6 +2,10 @@
 database.db
 database.db-shm
 database.db-wal
+licenses_store.db
+licenses_store.db-shm
+licenses_store.db-wal
+*.db-journal
 .pytest_cache/
 __pycache__/
 *.py[cod]

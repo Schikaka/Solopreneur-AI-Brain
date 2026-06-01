@@ -14,6 +14,7 @@ from gatekeeper_server import (
     detect_math_anomalies,
     generate_narrative_result,
     generate_refinement_result,
+    verify_truth_locked_numbers,
 )
 from license_store import device_hmac
 from security_tokens import authorization_header, gatekeeper_payload, payload_hash
@@ -588,8 +589,7 @@ def test_semantic_firewall_rejects_prompt_injection():
     assert payload["firewall"]["category"] == "prompt_injection"
 
 
-def test_gatekeeper_limits_reports_per_minute(monkeypatch):
-    monkeypatch.setenv("GATEKEEPER_REPORTS_PER_MINUTE", "5")
+def test_gatekeeper_limits_demo_reports_per_hour():
     client = create_app().test_client()
     stats = {
         "total_revenue": 1000,
@@ -604,6 +604,21 @@ def test_gatekeeper_limits_reports_per_minute(monkeypatch):
     assert [response.status_code for response in responses[:5]] == [200] * 5
     assert responses[5].status_code == 429
     assert "Too many" in responses[5].get_json()["error"]
+
+
+def test_gatekeeper_allows_elite_hourly_quota_above_demo_limit():
+    client = create_app().test_client()
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    responses = [post_signed(client, "TEST456", stats) for _ in range(6)]
+
+    assert [response.status_code for response in responses] == [200] * 6
 
 
 def test_openai_circuit_breaker_returns_stable_fallback(monkeypatch):
@@ -654,6 +669,22 @@ def test_math_anomaly_detection_flags_ai_number_drift():
     assert {item["raw"] for item in report["details"]} == {"88.00%"}
 
 
+def test_truth_verification_rejects_numbers_not_in_locked_stats():
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    report = verify_truth_locked_numbers("Revenue was $999.00 with 4.00x ROAS.", stats)
+
+    assert report["ok"] is False
+    assert report["math_verified"] is False
+    assert report["unsupported_numbers"][0]["raw"] == "$999.00"
+
+
 def test_gatekeeper_saves_reasoning_trace_and_audit_view():
     client = create_app().test_client()
     stats = {
@@ -670,11 +701,13 @@ def test_gatekeeper_saves_reasoning_trace_and_audit_view():
 
     assert response.status_code == 200
     assert payload["audit"]["reasoning_trace_available"] is True
+    assert payload["audit"]["math_verified"] is True
     assert audit_response.status_code == 200
     assert b"Enterprise Audit Trace" in audit_response.data
     assert b"CredibilityMapping" in audit_response.data
     assert b"csv_rows" in audit_response.data
     assert b"column_index" in audit_response.data
+    assert b"Math Verified" in audit_response.data
 
 
 def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
@@ -731,6 +764,63 @@ def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
     assert "Rule of Three" in system_prompt
     assert "PAS" in system_prompt
     assert "Strategic Recommendations" in user_prompt
+
+
+def test_openai_generation_retries_once_when_truth_verification_fails(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
+    monkeypatch.setattr(gatekeeper_server, "IDEMPOTENT_CACHE", IdempotentCache())
+    bodies = []
+    first_narrative = (
+        "**Executive CMO Brief**\n"
+        "The portfolio generated $999.00 in secured return from $250.00 in deployed capital.\n\n"
+        "**Execution Efficiency**\n"
+        "Capital efficiency is strong at 4.00x ROAS.\n\n"
+        "**Campaign Momentum**\n"
+        "Search is the clear momentum driver.\n\n"
+        "**Optimization Pathways**\n"
+        "The next step is disciplined scale.\n\n"
+        "**Strategic Recommendations**\n"
+        "1. Scale the strongest segment.\n"
+        "2. Protect return quality.\n"
+        "3. Review momentum weekly."
+    )
+    corrected_narrative = first_narrative.replace("$999.00", "$1,000.00")
+
+    class Response:
+        def __init__(self, content):
+            self.content = content
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": self.content}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            }
+
+    def post(url, headers, json, timeout):
+        bodies.append(json)
+        return Response(first_narrative if len(bodies) == 1 else corrected_narrative)
+
+    monkeypatch.setattr("gatekeeper_server.requests.post", post)
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    result = generate_narrative_result(stats)
+
+    assert len(bodies) == 2
+    assert result["source"] == "openai_corrected"
+    assert result["math_verified"] is True
+    assert result["truth_verification"]["ok"] is True
+    assert "Corrective Message" in bodies[1]["messages"][-1]["content"]
+    assert "$999.00" not in result["narrative"]
 
 
 def test_openai_refinement_uses_gpt_4o_mini_and_fact_lock(monkeypatch):

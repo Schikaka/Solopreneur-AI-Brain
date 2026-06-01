@@ -48,6 +48,7 @@ Set these environment variables before deploying:
 - `STRIPE_WEBHOOK_SECRET`
 - `EMERGENT_LLM_KEY`
 - `LICENSE_DB_PATH`
+- `RATELIMIT_STORAGE_URI`
 - `LICENSE_SEED_KEYS`
 - `PORT`
 - `MAX_UPLOAD_MB`
@@ -55,14 +56,18 @@ Set these environment variables before deploying:
 - `SQLCIPHER_REQUIRED=1`
 - `WAF_HEADER_CHECK=1`
 
-The Gatekeeper stores license hashes in `database.db` through SQLCipher when
+The Gatekeeper stores license hashes in `licenses_store.db` through SQLCipher when
 `pysqlcipher3` is installed. Production deployments must set
 `SQLCIPHER_REQUIRED=1` and use a long random `DATABASE_ENCRYPTION_KEY`.
 
 The Gatekeeper also runs a semantic firewall, OpenAI circuit breaker, idempotent
 fallback cache, strict Stripe webhook signature verification, WAF-friendly edge
-header checks, and JSON structured logs. Set `REDIS_URL` to persist fallback
-cache entries outside process memory.
+header checks, truth verification, tiered Flask-Limiter quotas, and JSON
+structured logs. Demo licenses are limited to 5 report/refinement requests per
+hour, and elite licenses are limited to 30 per hour. Set
+`RATELIMIT_STORAGE_URI` to a Redis-compatible URL for shared production quota
+state; otherwise the app falls back to in-memory limiter storage. Set `REDIS_URL`
+to persist fallback cache entries outside process memory.
 
 ## How To Deploy On Render
 
@@ -80,6 +85,8 @@ cache entries outside process memory.
    - `LICENSE_SEED_KEYS`: comma-separated paid or pilot license keys.
    - `STRIPE_WEBHOOK_SECRET`: the Stripe endpoint signing secret beginning with `whsec_`.
    - `EMERGENT_LLM_KEY`: production model key.
+   - `RATELIMIT_STORAGE_URI`: Redis-compatible limiter storage. The Blueprint
+     wires this automatically when the Render Key Value service is created.
    - `REDIS_URL`: optional, but recommended for persistent fallback cache.
    - `ALLOWED_HOSTS`: optional custom domains, comma-separated. Render's own hostname is accepted automatically.
    - `DOMAIN_URL`: production service URL. Use Render's generated URL first, for example `https://narrativeai-gatekeeper.onrender.com`, then replace it with the custom domain when DNS is live.
@@ -112,7 +119,7 @@ export DOMAIN_URL=https://<your-render-service>.onrender.com
 9. For real paying customers, add persistent storage before relying on the
    SQLite license/event database long term. Mount a Render disk and change
    `LICENSE_DB_PATH` to a path on that disk, for example
-   `/var/data/database.db`.
+   `/var/data/licenses_store.db`.
 
 10. Optional local Blueprint validation:
 
@@ -142,6 +149,7 @@ Use this checklist before opening sales traffic or sending demo keys:
    - `/readyness` returns `ok: true`.
    - Database check reports `encrypted: true`.
    - Startup validation reports `status: pass`.
+   - Truth-Verification reports `math_verified: true` on a known-good report.
 6. HTTPS hardening is confirmed:
    - `Strict-Transport-Security` is present.
    - Any production `http://` service URL has been replaced with `https://`.
@@ -152,11 +160,59 @@ Use this checklist before opening sales traffic or sending demo keys:
    - Session Monitor shows no unexplained flagged keys.
    - Sales & Leads can save a test lead.
    - Generate 48h Demo Key returns a `DEMO-` key with an expiry timestamp.
+   - Audit shows `Math Verified` for a clean generated report.
+   - A sixth hourly request with the same demo key returns `429`, while elite
+     keys allow up to 30 hourly report/refinement requests.
 9. Main dashboard checks:
    - About page shows the Elite Privacy Guarantee.
    - Upgrade to Pro button opens the Stripe Payment Link.
    - Sample report generation succeeds with a production license key.
 10. Rollback plan is ready: redeploy the previous successful Render deploy from the dashboard and rotate any exposed secrets before retrying launch.
+
+## Repository History Scrubbing Runbook
+
+Use this only after rotating exposed secrets in OpenAI, Stripe, Render, and any
+other provider dashboard. Removing a key from Git history does not revoke the
+key; provider-side rotation comes first.
+
+1. Freeze pushes to `main` and tell collaborators they will need to reclone or
+   hard-reset after the scrub.
+2. Install the history rewrite tool outside the app virtualenv:
+
+```bash
+python3 -m pip install --user git-filter-repo
+```
+
+3. Create a fresh mirror clone:
+
+```bash
+git clone --mirror https://github.com/Schikaka/Solopreneur-AI-Brain.git NarrativeAI-scrub.git
+cd NarrativeAI-scrub.git
+```
+
+4. Create a `secrets-to-remove.txt` file containing one revoked secret per line.
+   Never put active secrets in this file.
+
+5. Rewrite history:
+
+```bash
+git filter-repo --replace-text secrets-to-remove.txt --force
+```
+
+6. Verify the scrub before pushing:
+
+```bash
+git grep -n "REVOKED_SECRET_FRAGMENT" $(git rev-list --all)
+```
+
+7. Force-push the cleaned history:
+
+```bash
+git push --force --mirror origin
+```
+
+8. Rotate Render environment variables again, clear any local clones that still
+   contain the old objects, and ask collaborators to reclone from GitHub.
 
 ## Standalone Distribution
 
@@ -182,6 +238,11 @@ stay on the protected backend boundary.
 - Database protection: license records are stored as hashes, with SQLCipher
   enforced in production through `SQLCIPHER_REQUIRED=1` and
   `DATABASE_ENCRYPTION_KEY`.
+- Rate limiting: Flask-Limiter protects `/verify-and-generate` and `/refine`
+  with 5/hour demo quotas and 30/hour elite quotas, keyed by a license
+  fingerprint rather than the raw key.
+- Truth verification: Gatekeeper cross-checks visible AI numbers against locked
+  CSV stats and retries once with a corrective message before falling back.
 - Request integrity: the local app signs Gatekeeper requests with JWTs and a
   payload SHA-256 header.
 - Intrusion tripwire: `/api/v1/debug_admin` is a honey-pot route. Any request to

@@ -1290,20 +1290,21 @@
           const audit = reportAudit(record);
           const id = reportId(record);
           const hasAnomaly = Boolean(audit.math_anomaly_detected);
+          const mathVerified = Boolean(audit.math_verified || (id && !hasAnomaly));
           const href = id ? `${gatekeeperAuditBase}/admin/audit/${encodeURIComponent(id)}` : "#";
           return `
             <article class="audit-entry ${hasAnomaly ? "is-anomaly" : ""}">
               <div>
                 <strong>${escapeHtml(reportHistoryTitle(record))}</strong>
                 <span>${escapeHtml(reportHistoryDate(record))} - ${escapeHtml(record.sourceLabel || "Local report")}</span>
-                <span class="audit-flag">${hasAnomaly ? "Math anomaly detected" : (id ? "Audit clean" : "Audit unavailable")}</span>
+                <span class="audit-flag">${hasAnomaly ? "Math anomaly detected" : (mathVerified ? "Math Verified" : "Audit unavailable")}</span>
               </div>
               <a class="audit-link" href="${escapeHtml(href)}" target="_blank" rel="noopener" ${id ? "" : 'aria-disabled="true"'}>View Audit</a>
             </article>
           `;
         }).join("");
         const anomalyCount = records.filter((record) => reportAudit(record).math_anomaly_detected).length;
-        auditState.textContent = anomalyCount ? `${anomalyCount} flagged` : "Clean";
+        auditState.textContent = anomalyCount ? `${anomalyCount} flagged` : "Math Verified";
         auditState.className = anomalyCount ? "pending" : "ready";
       }
 

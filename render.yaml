@@ -22,9 +22,12 @@ services:
       - key: HOST
         value: 0.0.0.0
       - key: LICENSE_DB_PATH
-        value: database.db
-      - key: GATEKEEPER_REPORTS_PER_MINUTE
-        value: "5"
+        value: licenses_store.db
+      - key: RATELIMIT_STORAGE_URI
+        fromService:
+          type: keyvalue
+          name: narrativeai-rate-limit-redis
+          property: connectionString
       - key: OPENAI_TIMEOUT_SECONDS
         value: "5"
       - key: OPENAI_MAX_LATENCY_SECONDS
@@ -49,3 +52,7 @@ services:
         sync: false
       - key: ALLOWED_HOSTS
         sync: false
+  - type: keyvalue
+    name: narrativeai-rate-limit-redis
+    plan: free
+    ipAllowList: []

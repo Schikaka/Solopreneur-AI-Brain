@@ -13,8 +13,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BASE_DIR = Path(__file__).parent
-DEFAULT_LICENSE_DB_PATH = BASE_DIR / "database.db"
+DEFAULT_LICENSE_DB_PATH = BASE_DIR / "licenses_store.db"
 DEFAULT_DEV_DB_KEY = "development-only-sqlcipher-key-change-me"
+LICENSE_TIERS = {"demo", "elite"}
 
 
 def _env_bool(name, default=False):
@@ -103,6 +104,18 @@ def _seed_keys_from_env():
     return [key.strip() for key in raw_keys.split(",") if key.strip()]
 
 
+def _infer_license_tier(license_key="", label="", expires_at=None, tier=None):
+    normalized_tier = str(tier or "").strip().lower()
+    if normalized_tier in LICENSE_TIERS:
+        return normalized_tier
+
+    normalized_key = str(license_key or "").strip().upper()
+    normalized_label = str(label or "").strip().lower()
+    if normalized_key.startswith("DEMO") or "demo" in normalized_label or expires_at:
+        return "demo"
+    return "elite"
+
+
 def _database_encryption_key():
     key = os.getenv("DATABASE_ENCRYPTION_KEY") or os.getenv("SQLCIPHER_KEY")
     if key:
@@ -152,6 +165,7 @@ class LicenseStore:
                 CREATE TABLE IF NOT EXISTS license_keys (
                     key_hash TEXT PRIMARY KEY,
                     active INTEGER NOT NULL DEFAULT 1,
+                    tier TEXT NOT NULL DEFAULT 'elite',
                     label TEXT,
                     created_at TEXT NOT NULL
                 )
@@ -169,6 +183,7 @@ class LicenseStore:
                 "last_seen_path": "TEXT",
                 "use_count": "INTEGER NOT NULL DEFAULT 0",
                 "expires_at": "TEXT",
+                "tier": "TEXT NOT NULL DEFAULT 'elite'",
             }
             for column, definition in required_columns.items():
                 if column not in existing_columns:
@@ -191,12 +206,13 @@ class LicenseStore:
             )
             created_at = _utc_now().isoformat()
             for license_key in self.seed_keys:
+                tier = _infer_license_tier(license_key, "seeded")
                 connection.execute(
                     """
-                    INSERT OR IGNORE INTO license_keys (key_hash, active, label, created_at)
-                    VALUES (?, 1, ?, ?)
+                    INSERT OR IGNORE INTO license_keys (key_hash, active, tier, label, created_at)
+                    VALUES (?, 1, ?, ?, ?)
                     """,
-                    (_license_hash(license_key), "seeded", created_at),
+                    (_license_hash(license_key), tier, "seeded", created_at),
                 )
             connection.commit()
 
@@ -214,29 +230,32 @@ class LicenseStore:
 
         return bool(row and int(row[0]) == 1 and not _is_expired(row[1]))
 
-    def create_license_key(self, license_key, *, label="manual", expires_at=None):
+    def create_license_key(self, license_key, *, label="manual", expires_at=None, tier=None):
         normalized = str(license_key or "").strip()
         if not normalized:
             raise ValueError("License key is required.")
 
         self.ensure_initialized()
         created_at = _utc_now().isoformat()
+        normalized_tier = _infer_license_tier(normalized, label, expires_at, tier)
         with self.connect() as connection:
             connection.execute(
                 """
-                INSERT INTO license_keys (key_hash, active, label, created_at, expires_at)
-                VALUES (?, 1, ?, ?, ?)
+                INSERT INTO license_keys (key_hash, active, tier, label, created_at, expires_at)
+                VALUES (?, 1, ?, ?, ?, ?)
                 ON CONFLICT(key_hash) DO UPDATE SET
                     active = 1,
+                    tier = excluded.tier,
                     label = excluded.label,
                     expires_at = excluded.expires_at
                 """,
-                (_license_hash(normalized), str(label or "manual"), created_at, expires_at),
+                (_license_hash(normalized), normalized_tier, str(label or "manual"), created_at, expires_at),
             )
             connection.commit()
         return {
             "license_key": normalized,
             "key_fingerprint": _license_hash(normalized)[:12],
+            "tier": normalized_tier,
             "label": str(label or "manual"),
             "expires_at": expires_at,
         }
@@ -245,9 +264,32 @@ class LicenseStore:
         duration_hours = max(1, int(hours or 48))
         raw_key = f"DEMO-{secrets.token_urlsafe(18).replace('-', '').replace('_', '')[:24].upper()}"
         expires_at = (_utc_now() + timedelta(hours=duration_hours)).isoformat()
-        record = self.create_license_key(raw_key, label=f"{duration_hours}h-demo", expires_at=expires_at)
+        record = self.create_license_key(raw_key, label=f"{duration_hours}h-demo", expires_at=expires_at, tier="demo")
         record["duration_hours"] = duration_hours
         return record
+
+    def license_tier(self, license_key):
+        normalized = str(license_key or "").strip()
+        if not normalized:
+            return "demo"
+        if normalized.upper().startswith("DEMO"):
+            return "demo"
+
+        self.ensure_initialized()
+        with self.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT active, label, expires_at, tier
+                FROM license_keys
+                WHERE key_hash = ?
+                LIMIT 1
+                """,
+                (_license_hash(normalized),),
+            ).fetchone()
+
+        if not row or int(row[0]) != 1 or _is_expired(row[2]):
+            return "demo"
+        return _infer_license_tier(normalized, row[1], row[2], row[3])
 
     def _record_auth_alert(
         self,
