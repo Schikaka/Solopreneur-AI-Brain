@@ -169,7 +169,7 @@
 
       .settings-tabs {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 6px;
         padding: 16px 16px 0;
       }
@@ -417,6 +417,87 @@
         color: var(--amber);
       }
 
+      .audit-panel-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 14px;
+      }
+
+      .audit-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .audit-entry {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 12px;
+        align-items: center;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .audit-entry.is-anomaly {
+        border-color: #fecaca;
+        background: #fef2f2;
+      }
+
+      .audit-entry strong,
+      .audit-entry span {
+        display: block;
+      }
+
+      .audit-entry strong {
+        color: var(--text);
+        font-size: 14px;
+        line-height: 1.35;
+      }
+
+      .audit-entry span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .audit-entry.is-anomaly span.audit-flag {
+        color: var(--red);
+        font-weight: 800;
+      }
+
+      .audit-link {
+        min-height: 34px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 800;
+        text-decoration: none;
+        white-space: nowrap;
+      }
+
+      .audit-link[aria-disabled="true"] {
+        cursor: not-allowed;
+        opacity: 0.55;
+      }
+
+      .empty {
+        padding: 24px;
+        border: 1px dashed var(--line);
+        border-radius: 8px;
+        color: var(--muted);
+        text-align: center;
+      }
+
       @media (max-width: 760px) {
         .shell {
           width: min(100% - 20px, 980px);
@@ -431,6 +512,11 @@
         }
 
         .admin-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .settings-tabs,
+        .audit-entry {
           grid-template-columns: 1fr;
         }
       }
@@ -461,6 +547,7 @@
           <div class="settings-tabs" role="tablist" aria-label="Workspace settings">
             <button class="settings-tab" id="branding-tab" type="button" role="tab" aria-selected="true" aria-controls="branding-panel">Branding</button>
             <button class="settings-tab" id="access-tab" type="button" role="tab" aria-selected="false" aria-controls="access-panel">Access</button>
+            <button class="settings-tab" id="audit-tab" type="button" role="tab" aria-selected="false" aria-controls="audit-panel">Audit</button>
           </div>
 
           <div class="settings-panel" id="branding-panel" role="tabpanel" aria-labelledby="branding-tab">
@@ -500,6 +587,15 @@
             </div>
             <div class="admin-status" id="access-status" role="status" aria-live="polite"></div>
           </div>
+
+          <div class="settings-panel" id="audit-panel" role="tabpanel" aria-labelledby="audit-tab" hidden>
+            <div class="audit-panel-head">
+              <h2>Generated Reports</h2>
+              <button class="button secondary" id="refresh-audit" type="button">Refresh</button>
+            </div>
+            <div class="audit-list" id="audit-list"></div>
+            <div class="admin-status" id="audit-status" role="status" aria-live="polite"></div>
+          </div>
         </section>
 
         <aside class="panel summary-panel" aria-label="Workspace status">
@@ -516,6 +612,10 @@
             <div class="status-row">
               <dt>Gatekeeper</dt>
               <dd class="ready">Configured</dd>
+            </div>
+            <div class="status-row">
+              <dt>Audit</dt>
+              <dd id="audit-state">Checking</dd>
             </div>
           </dl>
         </aside>
@@ -536,11 +636,28 @@
       const clearAccessButton = document.querySelector("#clear-access");
       const accessStatus = document.querySelector("#access-status");
       const accessState = document.querySelector("#access-state");
+      const auditState = document.querySelector("#audit-state");
+      const auditList = document.querySelector("#audit-list");
+      const auditStatus = document.querySelector("#audit-status");
+      const refreshAuditButton = document.querySelector("#refresh-audit");
       const settingsTabs = document.querySelectorAll(".settings-tab");
       const settingsPanels = document.querySelectorAll(".settings-panel");
       const sampleReportCacheKey = "narrativeai.sampleReport";
       const sampleReportCacheTtlMs = 6 * 60 * 60 * 1000;
+      const historyDbName = "narrativeai.localHistoryVault";
+      const historyDbVersion = 1;
+      const historyStoreName = "reports";
+      const gatekeeperAuditBase = {{ gatekeeper_url|tojson }};
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
+      let historyDbPromise = null;
+
+      const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        "\"": "&quot;",
+        "'": "&#39;"
+      })[char]);
 
       function setStatus(element, message, kind = "") {
         element.className = kind ? `admin-status ${kind}` : "admin-status";
@@ -554,6 +671,128 @@
         accessState.className = hasLicense ? "ready" : "pending";
         brandingState.textContent = hasLogo ? "Logo ready" : "Default brand";
         brandingState.className = hasLogo ? "ready" : "pending";
+      }
+
+      function openHistoryVault() {
+        if (!("indexedDB" in window)) {
+          return Promise.reject(new Error("Local History Vault is unavailable in this browser."));
+        }
+        if (historyDbPromise) {
+          return historyDbPromise;
+        }
+        historyDbPromise = new Promise((resolve, reject) => {
+          const request = indexedDB.open(historyDbName, historyDbVersion);
+          request.onupgradeneeded = () => {
+            const db = request.result;
+            if (!db.objectStoreNames.contains(historyStoreName)) {
+              const store = db.createObjectStore(historyStoreName, { keyPath: "id" });
+              store.createIndex("createdAt", "createdAt", { unique: false });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => {
+            historyDbPromise = null;
+            reject(request.error || new Error("Local History Vault could not be opened."));
+          };
+        });
+        return historyDbPromise;
+      }
+
+      function transactionDone(transaction) {
+        return new Promise((resolve, reject) => {
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error || new Error("Local History Vault transaction failed."));
+          transaction.onabort = () => reject(transaction.error || new Error("Local History Vault transaction was aborted."));
+        });
+      }
+
+      function requestResult(request) {
+        return new Promise((resolve, reject) => {
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error || new Error("Local History Vault request failed."));
+        });
+      }
+
+      async function readHistoryReports() {
+        const db = await openHistoryVault();
+        const transaction = db.transaction(historyStoreName, "readonly");
+        const request = transaction.objectStore(historyStoreName).getAll();
+        const records = await requestResult(request);
+        await transactionDone(transaction);
+        return records.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+      }
+
+      function reportHistoryTitle(record) {
+        return record?.report?.stats?.top_campaign || "Marketing report";
+      }
+
+      function reportHistoryDate(record) {
+        try {
+          const savedAt = new Date(record.createdAt);
+          if (Number.isNaN(savedAt.getTime())) {
+            return "Saved report";
+          }
+          return savedAt.toLocaleString([], {
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit"
+          });
+        } catch (error) {
+          return "Saved report";
+        }
+      }
+
+      function reportAudit(record) {
+        return record?.report?.audit || {};
+      }
+
+      function reportId(record) {
+        return record?.report?.report_id || reportAudit(record).report_id || "";
+      }
+
+      function renderAuditList(records = []) {
+        if (!records.length) {
+          auditList.innerHTML = '<div class="empty">No generated reports saved locally.</div>';
+          auditState.textContent = "No reports";
+          auditState.className = "pending";
+          return;
+        }
+
+        auditList.innerHTML = records.map((record) => {
+          const audit = reportAudit(record);
+          const id = reportId(record);
+          const hasAnomaly = Boolean(audit.math_anomaly_detected);
+          const href = id ? `${gatekeeperAuditBase}/admin/audit/${encodeURIComponent(id)}` : "#";
+          return `
+            <article class="audit-entry ${hasAnomaly ? "is-anomaly" : ""}">
+              <div>
+                <strong>${escapeHtml(reportHistoryTitle(record))}</strong>
+                <span>${escapeHtml(reportHistoryDate(record))} - ${escapeHtml(record.sourceLabel || "Local report")}</span>
+                <span class="audit-flag">${hasAnomaly ? "Math anomaly detected" : (id ? "Audit clean" : "Audit unavailable")}</span>
+              </div>
+              <a class="audit-link" href="${escapeHtml(href)}" target="_blank" rel="noopener" ${id ? "" : 'aria-disabled="true"'}>View Audit</a>
+            </article>
+          `;
+        }).join("");
+        const anomalyCount = records.filter((record) => reportAudit(record).math_anomaly_detected).length;
+        auditState.textContent = anomalyCount ? `${anomalyCount} flagged` : "Clean";
+        auditState.className = anomalyCount ? "pending" : "ready";
+      }
+
+      async function refreshAuditList() {
+        try {
+          const records = await readHistoryReports();
+          renderAuditList(records);
+          setStatus(auditStatus, records.length ? `${records.length} report${records.length === 1 ? "" : "s"} indexed for audit.` : "");
+          return records;
+        } catch (error) {
+          auditList.innerHTML = `<div class="empty">${escapeHtml(error.message)}</div>`;
+          auditState.textContent = "Unavailable";
+          auditState.className = "pending";
+          setStatus(auditStatus, error.message, "error");
+          return [];
+        }
       }
 
       function updateLogoPreview() {
@@ -610,6 +849,9 @@
           settingsPanels.forEach((panel) => {
             panel.hidden = panel.id !== tab.getAttribute("aria-controls");
           });
+          if (tab.getAttribute("aria-controls") === "audit-panel") {
+            refreshAuditList();
+          }
         });
       });
 
@@ -670,8 +912,11 @@
         setStatus(accessStatus, "Access cleared.", "success");
       });
 
+      refreshAuditButton.addEventListener("click", () => refreshAuditList());
+
       updateLogoPreview();
       updateSummary();
+      refreshAuditList();
       warmSampleReportCache();
     </script>
   </body>

@@ -7,6 +7,7 @@ import re
 import time
 import uuid
 from contextvars import ContextVar
+from datetime import datetime, timezone
 
 import requests
 from dotenv import load_dotenv
@@ -44,6 +45,8 @@ STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
 DIRECTIVE_TONES = ("Boardroom", "Startup", "Precise", "Persuasive")
 DIRECTIVE_GOALS = ("Budget Request", "Performance Fix", "Retention")
 REFINEMENT_MODEL = "gpt-4o-mini"
+AUDIT_TRACE_MARKER = "AUDIT_TRACE_JSON"
+MATH_ANOMALY_THRESHOLD = 0.01
 FORBIDDEN_NARRATIVE_TERMS = (
     "gatekeeper",
     "license",
@@ -66,6 +69,7 @@ Non-negotiable narrative rules:
 - Use PAS (Problem-Agitate-Solution) when performance dips or weak efficiency signals appear, while keeping the tone executive and constructive.
 - End with a dedicated Strategic Recommendations section containing exactly three numbered recommendations.
 - Make the output immediately copy-pasteable for a client-facing boardroom report.
+- After the public markdown, append a hidden HTML comment named AUDIT_TRACE_JSON containing compact JSON with a CredibilityMapping array. Each mapping must connect a key claim to CSV row and column references from the supplied audit context. Never expose or explain this audit block in the visible report.
 """.strip()
 MARKETING_STATS_KEYS = {
     "total_revenue",
@@ -225,6 +229,127 @@ GATEKEEPER_PAGE = """
 </html>
 """
 
+AUDIT_PAGE = """
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>NarrativeAI Audit</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1120;
+        --surface: #111827;
+        --surface-soft: #172033;
+        --text: #e5eefb;
+        --muted: #94a3b8;
+        --line: #263244;
+        --green: #86efac;
+        --red: #fca5a5;
+        --amber: #fbbf24;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      main {
+        width: min(1100px, calc(100% - 32px));
+        margin: 0 auto;
+        padding: 28px 0 38px;
+      }
+      header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 18px;
+        margin-bottom: 18px;
+      }
+      h1, p { margin: 0; }
+      h1 { font-size: 30px; line-height: 1.1; }
+      p { margin-top: 8px; color: var(--muted); line-height: 1.5; }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        min-height: 32px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--surface-soft);
+        color: var(--green);
+        font-size: 13px;
+        font-weight: 800;
+      }
+      .badge.anomaly {
+        color: var(--red);
+      }
+      .meta {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin: 18px 0;
+      }
+      .meta div {
+        min-height: 72px;
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--surface);
+      }
+      .meta span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .meta strong {
+        display: block;
+        margin-top: 8px;
+        overflow-wrap: anywhere;
+      }
+      pre {
+        min-height: 440px;
+        margin: 0;
+        padding: 18px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #050a16;
+        color: #dbeafe;
+        font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        white-space: pre-wrap;
+      }
+      @media (max-width: 760px) {
+        header { flex-direction: column; }
+        .meta { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <h1>Enterprise Audit Trace</h1>
+          <p>Internal reasoning map and math anomaly report for this generated narrative.</p>
+        </div>
+        <div class="badge {{ badge_class }}">{{ badge_text }}</div>
+      </header>
+      <section class="meta" aria-label="Audit metadata">
+        <div><span>Report ID</span><strong>{{ report_id }}</strong></div>
+        <div><span>Created</span><strong>{{ created_at }}</strong></div>
+        <div><span>Source</span><strong>{{ report_source }}</strong></div>
+        <div><span>Request</span><strong>{{ request_type }}</strong></div>
+      </section>
+      <pre>{{ trace_json }}</pre>
+    </main>
+  </body>
+</html>
+"""
+
 
 def _env_int(name, default):
     try:
@@ -303,6 +428,149 @@ def log_event(level, event, **fields):
             "extra_fields": fields,
         },
     )
+
+
+class AuditReportStore:
+    def __init__(self, license_store):
+        self.license_store = license_store
+
+    def ensure_initialized(self):
+        self.license_store.ensure_initialized()
+        with self.license_store.connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS reports (
+                    id TEXT PRIMARY KEY,
+                    created_at TEXT NOT NULL,
+                    tenant_id TEXT NOT NULL,
+                    request_type TEXT NOT NULL,
+                    parent_report_id TEXT,
+                    source TEXT,
+                    directive_json TEXT NOT NULL,
+                    stats_json TEXT NOT NULL,
+                    audit_context_json TEXT NOT NULL,
+                    narrative TEXT NOT NULL,
+                    reasoning_trace TEXT NOT NULL,
+                    math_anomaly_detected INTEGER NOT NULL DEFAULT 0,
+                    anomaly_details_json TEXT NOT NULL
+                )
+                """
+            )
+            existing_columns = {
+                row[1] for row in connection.execute("PRAGMA table_info(reports)").fetchall()
+            }
+            required_columns = {
+                "reasoning_trace": "TEXT NOT NULL DEFAULT '{}'",
+                "audit_context_json": "TEXT NOT NULL DEFAULT '{}'",
+                "math_anomaly_detected": "INTEGER NOT NULL DEFAULT 0",
+                "anomaly_details_json": "TEXT NOT NULL DEFAULT '[]'",
+                "parent_report_id": "TEXT",
+            }
+            for column, definition in required_columns.items():
+                if column not in existing_columns:
+                    connection.execute(f"ALTER TABLE reports ADD COLUMN {column} {definition}")
+            connection.commit()
+
+    def save_report(
+        self,
+        *,
+        tenant_id,
+        request_type,
+        stats,
+        narrative,
+        source,
+        directive,
+        reasoning_trace,
+        math_anomaly,
+        audit_context=None,
+        parent_report_id=None,
+    ):
+        self.ensure_initialized()
+        report_id = uuid.uuid4().hex
+        created_at = datetime.now(timezone.utc).isoformat()
+        anomaly_details = (math_anomaly or {}).get("details", [])
+        with self.license_store.connect() as connection:
+            connection.execute(
+                """
+                INSERT INTO reports (
+                    id,
+                    created_at,
+                    tenant_id,
+                    request_type,
+                    parent_report_id,
+                    source,
+                    directive_json,
+                    stats_json,
+                    audit_context_json,
+                    narrative,
+                    reasoning_trace,
+                    math_anomaly_detected,
+                    anomaly_details_json
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    report_id,
+                    created_at,
+                    tenant_id,
+                    request_type,
+                    parent_report_id,
+                    source,
+                    canonical_json(directive or {}),
+                    canonical_json(stats or {}),
+                    canonical_json(audit_context or {}),
+                    narrative,
+                    json.dumps(reasoning_trace or {}, sort_keys=True),
+                    1 if (math_anomaly or {}).get("detected") else 0,
+                    json.dumps(anomaly_details, sort_keys=True),
+                ),
+            )
+            connection.commit()
+        return report_id
+
+    def get_report(self, report_id):
+        self.ensure_initialized()
+        with self.license_store.connect() as connection:
+            row = connection.execute(
+                """
+                SELECT
+                    id,
+                    created_at,
+                    tenant_id,
+                    request_type,
+                    parent_report_id,
+                    source,
+                    directive_json,
+                    stats_json,
+                    audit_context_json,
+                    narrative,
+                    reasoning_trace,
+                    math_anomaly_detected,
+                    anomaly_details_json
+                FROM reports
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (str(report_id or ""),),
+            ).fetchone()
+        if not row:
+            return None
+        keys = (
+            "id",
+            "created_at",
+            "tenant_id",
+            "request_type",
+            "parent_report_id",
+            "source",
+            "directive_json",
+            "stats_json",
+            "audit_context_json",
+            "narrative",
+            "reasoning_trace",
+            "math_anomaly_detected",
+            "anomaly_details_json",
+        )
+        return dict(zip(keys, row))
 
 
 def _extract_client_ip():
@@ -458,6 +726,258 @@ def _respects_fact_lock(text, stats):
     return not unsupported_tokens
 
 
+def _extract_hidden_audit_trace(text):
+    pattern = re.compile(
+        rf"<!--\s*{re.escape(AUDIT_TRACE_MARKER)}\s*(\{{.*?\}})\s*-->",
+        re.DOTALL,
+    )
+    match = pattern.search(str(text or ""))
+    if not match:
+        return str(text or "").strip(), None
+
+    cleaned = pattern.sub("", str(text or "")).strip()
+    try:
+        parsed = json.loads(match.group(1))
+    except json.JSONDecodeError:
+        parsed = None
+    return cleaned, parsed
+
+
+def _audit_context_rows(audit_context):
+    if not isinstance(audit_context, dict):
+        return []
+    rows = audit_context.get("source_rows")
+    return rows if isinstance(rows, list) else []
+
+
+def _audit_aggregate_map(audit_context):
+    if not isinstance(audit_context, dict):
+        return {}
+    aggregate_map = audit_context.get("aggregate_map")
+    return aggregate_map if isinstance(aggregate_map, dict) else {}
+
+
+def _audit_column_index(audit_context, column):
+    columns = ((audit_context or {}).get("columns") or {}) if isinstance(audit_context, dict) else {}
+    try:
+        return int(columns.get(column))
+    except (TypeError, ValueError):
+        return None
+
+
+def _source_reference_for_stat(stat_key, audit_context):
+    aggregate_map = _audit_aggregate_map(audit_context)
+    reference = aggregate_map.get(stat_key)
+    if isinstance(reference, dict):
+        return reference
+    return {"stat_key": stat_key, "source": "derived_stats"}
+
+
+def _rows_for_campaign(campaign, audit_context):
+    rows = []
+    for row in _audit_context_rows(audit_context):
+        campaign_cell = (row.get("columns") or {}).get("Campaign") or {}
+        if str(campaign_cell.get("value")) == str(campaign):
+            rows.append(row.get("csv_row_index"))
+    return [row for row in rows if row is not None]
+
+
+def _claim_snippet(text, needles, fallback):
+    paragraphs = re.split(r"\n\s*\n|(?<=[.!?])\s+", str(text or ""))
+    lowered_needles = [str(needle).lower() for needle in needles if needle]
+    for paragraph in paragraphs:
+        lowered = paragraph.lower()
+        if any(needle in lowered for needle in lowered_needles):
+            return paragraph.strip()
+    return fallback
+
+
+def _build_reasoning_trace(stats, narrative, audit_context=None, anomaly_report=None, model_trace=None):
+    sanitized = _sanitized_stats_for_narrative(stats)
+    top_campaign = sanitized.get("top_campaign")
+    credibility_mapping = [
+        {
+            "claim": _claim_snippet(
+                narrative,
+                [_format_money(_safe_float(sanitized.get("total_revenue"))), "secured return"],
+                "Revenue claim in Executive CMO Brief",
+            ),
+            "claim_type": "total_revenue",
+            "source": _source_reference_for_stat("total_revenue", audit_context),
+            "confidence": "high",
+        },
+        {
+            "claim": _claim_snippet(
+                narrative,
+                [_format_money(_safe_float(sanitized.get("total_spend"))), "deployed capital"],
+                "Spend claim in Executive CMO Brief",
+            ),
+            "claim_type": "total_spend",
+            "source": _source_reference_for_stat("total_spend", audit_context),
+            "confidence": "high",
+        },
+        {
+            "claim": _claim_snippet(
+                narrative,
+                [f"{_safe_float(sanitized.get('avg_roas')):.2f}x", "roas"],
+                "ROAS claim in Executive CMO Brief",
+            ),
+            "claim_type": "avg_roas",
+            "source": _source_reference_for_stat("avg_roas", audit_context),
+            "confidence": "high",
+        },
+        {
+            "claim": _claim_snippet(
+                narrative,
+                [str(_safe_int(sanitized.get("total_conversions"))), "conversions"],
+                "Conversion claim in Executive CMO Brief",
+            ),
+            "claim_type": "total_conversions",
+            "source": _source_reference_for_stat("total_conversions", audit_context),
+            "confidence": "high",
+        },
+        {
+            "claim": _claim_snippet(
+                narrative,
+                [top_campaign, "momentum"],
+                "Top campaign momentum claim",
+            ),
+            "claim_type": "top_campaign",
+            "source": {
+                "stat_key": "top_campaign",
+                "csv_rows": _rows_for_campaign(top_campaign, audit_context),
+                "columns": [
+                    {"name": "Campaign", "column_index": _audit_column_index(audit_context, "Campaign")},
+                    {"name": "Revenue", "column_index": _audit_column_index(audit_context, "Revenue")},
+                ],
+            },
+            "confidence": "medium" if top_campaign else "low",
+        },
+    ]
+    trace = {
+        "CredibilityMapping": credibility_mapping,
+        "MathAnomalyDetection": anomaly_report or {"detected": False, "details": []},
+        "SourceContext": {
+            "columns": (audit_context or {}).get("columns", {}) if isinstance(audit_context, dict) else {},
+            "row_count": len(_audit_context_rows(audit_context)),
+        },
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    if isinstance(model_trace, dict):
+        trace["ModelSuppliedTrace"] = model_trace
+    return trace
+
+
+def _numeric_source_facts(stats, audit_context=None):
+    facts = []
+    sanitized = stats or {}
+    money_keys = {"total_revenue", "total_spend"}
+    for key, value in sanitized.items():
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            continue
+        fact_type = "money" if key in money_keys else "number"
+        facts.append({"key": key, "value": float(value), "type": fact_type})
+
+    total_revenue = _safe_float(sanitized.get("total_revenue"))
+    total_spend = _safe_float(sanitized.get("total_spend"))
+    avg_roas = _safe_float(sanitized.get("avg_roas"))
+    avg_ctr = _safe_float(sanitized.get("avg_ctr"))
+    if avg_ctr:
+        facts.append({"key": "avg_ctr", "value": avg_ctr, "type": "percent"})
+    if avg_roas:
+        facts.append({"key": "avg_roas_as_percent", "value": avg_roas * 100, "type": "percent"})
+    if total_spend:
+        facts.append(
+            {
+                "key": "portfolio_roi_percent",
+                "value": ((total_revenue - total_spend) / total_spend) * 100,
+                "type": "percent",
+            }
+        )
+
+    for row in _audit_context_rows(audit_context):
+        columns = row.get("columns") or {}
+        for column in ("Spend", "Revenue"):
+            cell = columns.get(column) or {}
+            try:
+                facts.append(
+                    {
+                        "key": f"row_{row.get('csv_row_index')}_{column}",
+                        "value": float(cell.get("value")),
+                        "type": "money",
+                    }
+                )
+            except (TypeError, ValueError):
+                continue
+    return facts
+
+
+def _extract_audited_numbers(text):
+    audited = []
+    for match in re.finditer(r"\$([0-9][0-9,]*(?:\.\d+)?)", str(text or "")):
+        audited.append(
+            {
+                "type": "money",
+                "raw": match.group(0),
+                "value": float(match.group(1).replace(",", "")),
+            }
+        )
+    for match in re.finditer(r"(?<![\w$])([0-9][0-9,]*(?:\.\d+)?)%", str(text or "")):
+        audited.append(
+            {
+                "type": "percent",
+                "raw": match.group(0),
+                "value": float(match.group(1).replace(",", "")),
+            }
+        )
+    return audited
+
+
+def detect_math_anomalies(narrative, stats, audit_context=None, threshold=MATH_ANOMALY_THRESHOLD):
+    facts = _numeric_source_facts(stats, audit_context)
+    findings = []
+    for number in _extract_audited_numbers(narrative):
+        compatible = [fact for fact in facts if fact["type"] == number["type"]]
+        if not compatible:
+            continue
+        nearest = min(
+            compatible,
+            key=lambda fact: abs(number["value"] - fact["value"]) / max(abs(fact["value"]), 1.0),
+        )
+        deviation = abs(number["value"] - nearest["value"]) / max(abs(nearest["value"]), 1.0)
+        if deviation > threshold:
+            findings.append(
+                {
+                    "value": number["value"],
+                    "raw": number["raw"],
+                    "type": number["type"],
+                    "nearest_source_key": nearest["key"],
+                    "nearest_source_value": round(nearest["value"], 4),
+                    "deviation_pct": round(deviation * 100, 2),
+                }
+            )
+
+    report = {"detected": bool(findings), "details": findings}
+    if report["detected"]:
+        log_event(logging.WARNING, "ANOMALY_DETECTED", anomalies=findings)
+    return report
+
+
+def _with_audit_metadata(result, stats, directive=None, audit_context=None, model_trace=None):
+    cleaned_narrative, parsed_trace = _extract_hidden_audit_trace(result.get("narrative", ""))
+    result["narrative"] = cleaned_narrative
+    anomaly_report = detect_math_anomalies(cleaned_narrative, stats, audit_context)
+    result["math_anomaly"] = anomaly_report
+    result["reasoning_trace"] = _build_reasoning_trace(
+        stats,
+        cleaned_narrative,
+        audit_context=audit_context,
+        anomaly_report=anomaly_report,
+        model_trace=model_trace or parsed_trace,
+    )
+    return result
+
+
 def _elite_cmo_narrative(stats, directive=None):
     sanitized = _sanitized_stats_for_narrative(stats)
     directive = _sanitize_directive(directive)
@@ -506,13 +1026,29 @@ def _elite_cmo_narrative(stats, directive=None):
     )
 
 
-def _build_cmo_messages(stats, directive=None):
+def _audit_context_prompt(audit_context):
+    if not audit_context:
+        return "{}"
+    return json.dumps(audit_context, sort_keys=True)[:12000]
+
+
+def _audit_trace_contract():
+    return (
+        f"\n\nInternal audit requirement: append one hidden HTML comment after the visible markdown in this exact form: "
+        f"<!-- {AUDIT_TRACE_MARKER} {{...}} -->. The JSON must contain a CredibilityMapping array. "
+        "Each item should include claim, source_rows, source_columns, and source_metric. "
+        "Do not mention this audit block in the visible narrative."
+    )
+
+
+def _build_cmo_messages(stats, directive=None, audit_context=None):
     sanitized_stats = _sanitized_stats_for_narrative(stats)
     directive = _sanitize_directive(directive)
     output_contract = (
         "Create a professional client-ready report using only these marketing statistics:\n"
         f"{json.dumps(sanitized_stats, sort_keys=True)}\n\n"
         f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
+        f"Audit context with CSV row and column indexes:\n{_audit_context_prompt(audit_context)}\n\n"
         "Return plain markdown with exactly this structure:\n"
         "**Executive CMO Brief**\n"
         "One concise opening paragraph using the phrases deployed capital and secured return.\n\n"
@@ -526,6 +1062,7 @@ def _build_cmo_messages(stats, directive=None):
         "1. First executive recommendation.\n"
         "2. Second executive recommendation.\n"
         "3. Third executive recommendation."
+        f"{_audit_trace_contract()}"
     )
     return [
         {"role": "system", "content": ELITE_CMO_SYSTEM_PROMPT},
@@ -533,7 +1070,7 @@ def _build_cmo_messages(stats, directive=None):
     ]
 
 
-def _build_refinement_messages(stats, narrative, instruction, directive=None):
+def _build_refinement_messages(stats, narrative, instruction, directive=None, audit_context=None):
     sanitized_stats = _sanitized_stats_for_narrative(stats)
     directive = _sanitize_directive(directive)
     fact_lock = (
@@ -555,9 +1092,11 @@ def _build_refinement_messages(stats, narrative, instruction, directive=None):
             "content": (
                 f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
                 f"Locked stats JSON: {json.dumps(sanitized_stats, sort_keys=True)}\n\n"
+                f"Audit context with CSV row and column indexes:\n{_audit_context_prompt(audit_context)}\n\n"
                 f"Original narrative:\n{str(narrative or '').strip()}\n\n"
                 f"Refinement request:\n{str(instruction or '').strip()}\n\n"
                 "Return the full refined narrative only. Preserve the existing section structure when possible."
+                f"{_audit_trace_contract()}"
             ),
         },
     ]
@@ -569,8 +1108,8 @@ def _fallback_refinement(stats, narrative, instruction, directive=None):
     return _elite_cmo_narrative(stats, directive=directive)
 
 
-def _stable_fallback_report(stats, reason="circuit_open", directive=None):
-    return {
+def _stable_fallback_report(stats, reason="circuit_open", directive=None, audit_context=None):
+    return _with_audit_metadata({
         "narrative": _elite_cmo_narrative(stats, directive=directive),
         "source": "stable_fallback",
         "circuit_state": "open",
@@ -580,7 +1119,7 @@ def _stable_fallback_report(stats, reason="circuit_open", directive=None):
             "groundedness": 1.0,
             "answer_relevance": 0.86,
         },
-    }
+    }, stats, directive=directive, audit_context=audit_context)
 
 
 def _fallback_narrative(stats, directive=None):
@@ -825,14 +1364,14 @@ def _breaker_error(exc):
     return False
 
 
-def generate_narrative_result(stats, directive=None):
+def generate_narrative_result(stats, directive=None, audit_context=None):
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("EMERGENT_LLM_KEY")
     directive = _sanitize_directive(directive)
-    cache_key = f"narrative:{_cache_key({'stats': stats, 'directive': directive})}"
+    cache_key = f"narrative:{_cache_key({'stats': stats, 'directive': directive, 'audit_context': audit_context or {}})}"
     cached = IDEMPOTENT_CACHE.get(cache_key)
 
     if not api_key:
-        return {
+        return _with_audit_metadata({
             "narrative": _fallback_narrative(stats, directive=directive),
             "source": "deterministic_fallback",
             "circuit_state": "closed",
@@ -842,32 +1381,39 @@ def generate_narrative_result(stats, directive=None):
                 "groundedness": 1.0,
                 "answer_relevance": 0.9,
             },
-        }
+        }, stats, directive=directive, audit_context=audit_context)
 
     if _circuit_is_open():
         if cached:
             cached["source"] = "idempotent_cache"
             cached["circuit_state"] = "open"
             return cached
-        fallback = _stable_fallback_report(stats, reason="circuit_open", directive=directive)
+        fallback = _stable_fallback_report(
+            stats,
+            reason="circuit_open",
+            directive=directive,
+            audit_context=audit_context,
+        )
         IDEMPOTENT_CACHE.set(cache_key, fallback)
         return fallback
 
     body = {
         "model": os.getenv("OPENAI_MODEL", os.getenv("EMERGENT_LLM_MODEL", "gpt-4o-mini")),
-        "messages": _build_cmo_messages(stats, directive=directive),
+        "messages": _build_cmo_messages(stats, directive=directive, audit_context=audit_context),
     }
 
     try:
         response_json = _call_openai_with_breaker(body, purpose="narrative_generation")
         token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
-        narrative = str(response_json["choices"][0]["message"]["content"]).strip()
+        raw_narrative = str(response_json["choices"][0]["message"]["content"]).strip()
+        narrative, model_trace = _extract_hidden_audit_trace(raw_narrative)
         source = "openai"
         if _contains_forbidden_narrative_terms(narrative) or not _has_required_cmo_sections(narrative):
             log_event(logging.WARNING, "openai_generation_contract_fallback")
             narrative = _elite_cmo_narrative(stats, directive=directive)
+            model_trace = None
             source = "contract_fallback"
-        result = {
+        result = _with_audit_metadata({
             "narrative": narrative,
             "source": source,
             "circuit_state": "closed",
@@ -877,7 +1423,7 @@ def generate_narrative_result(stats, directive=None):
                 "groundedness": 0.96,
                 "answer_relevance": 0.96,
             },
-        }
+        }, stats, directive=directive, audit_context=audit_context, model_trace=model_trace)
         IDEMPOTENT_CACHE.set(cache_key, result)
         return result
     except Exception as exc:
@@ -887,7 +1433,12 @@ def generate_narrative_result(stats, directive=None):
             cached["source"] = "idempotent_cache"
             cached["circuit_state"] = "open" if _circuit_is_open() else "closed"
             return cached
-        fallback = _stable_fallback_report(stats, reason=reason, directive=directive)
+        fallback = _stable_fallback_report(
+            stats,
+            reason=reason,
+            directive=directive,
+            audit_context=audit_context,
+        )
         IDEMPOTENT_CACHE.set(cache_key, fallback)
         return fallback
 
@@ -896,7 +1447,7 @@ def generate_narrative(stats):
     return generate_narrative_result(stats)["narrative"]
 
 
-def generate_refinement_result(stats, narrative, instruction, directive=None):
+def generate_refinement_result(stats, narrative, instruction, directive=None, audit_context=None):
     directive = _sanitize_directive(directive)
     instruction = str(instruction or "").strip()
     if not instruction:
@@ -904,48 +1455,87 @@ def generate_refinement_result(stats, narrative, instruction, directive=None):
 
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("EMERGENT_LLM_KEY")
     if not api_key or _circuit_is_open():
-        return {
+        return _with_audit_metadata({
             "narrative": _fallback_refinement(stats, narrative, instruction, directive=directive),
             "source": "deterministic_refinement",
             "model": REFINEMENT_MODEL,
             "circuit_state": "open" if _circuit_is_open() else "closed",
             "token_usage": DEFAULT_TOKEN_USAGE,
             "fact_check_locked": True,
-        }
+        }, stats, directive=directive, audit_context=audit_context)
 
     body = {
         "model": REFINEMENT_MODEL,
-        "messages": _build_refinement_messages(stats, narrative, instruction, directive=directive),
+        "messages": _build_refinement_messages(
+            stats,
+            narrative,
+            instruction,
+            directive=directive,
+            audit_context=audit_context,
+        ),
     }
 
     try:
         response_json = _call_openai_with_breaker(body, purpose="narrative_refinement")
         token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
-        refined = str(response_json["choices"][0]["message"]["content"]).strip()
+        raw_refined = str(response_json["choices"][0]["message"]["content"]).strip()
+        refined, model_trace = _extract_hidden_audit_trace(raw_refined)
         source = "openai_refinement"
         if _contains_forbidden_narrative_terms(refined) or not _respects_fact_lock(refined, stats):
             log_event(logging.WARNING, "openai_refinement_fact_lock_fallback")
             refined = _fallback_refinement(stats, narrative, instruction, directive=directive)
+            model_trace = None
             source = "fact_check_fallback"
-        return {
+        return _with_audit_metadata({
             "narrative": refined,
             "source": source,
             "model": REFINEMENT_MODEL,
             "circuit_state": "closed",
             "token_usage": token_usage,
             "fact_check_locked": True,
-        }
+        }, stats, directive=directive, audit_context=audit_context, model_trace=model_trace)
     except Exception as exc:
         reason = "circuit_open" if _breaker_error(exc) or _circuit_is_open() else "upstream_error"
         log_event(logging.WARNING, "openai_refinement_fallback", reason=reason, error=str(exc))
-        return {
+        return _with_audit_metadata({
             "narrative": _fallback_refinement(stats, narrative, instruction, directive=directive),
             "source": "deterministic_refinement",
             "model": REFINEMENT_MODEL,
             "circuit_state": "open" if _circuit_is_open() else "closed",
             "token_usage": DEFAULT_TOKEN_USAGE,
             "fact_check_locked": True,
-        }
+        }, stats, directive=directive, audit_context=audit_context)
+
+
+def _admin_audit_allowed():
+    if os.getenv("APP_ENV") in {"testing", "development"}:
+        return True
+    expected_token = os.getenv("ADMIN_AUDIT_TOKEN", "").strip()
+    supplied_token = request.headers.get("X-Admin-Audit-Token", "") or request.args.get("token", "")
+    if expected_token and hmac.compare_digest(supplied_token, expected_token):
+        return True
+    return request.remote_addr in {"127.0.0.1", "::1", "localhost"}
+
+
+def _json_loads_or_default(raw, default):
+    try:
+        return json.loads(raw or "")
+    except (TypeError, json.JSONDecodeError):
+        return default
+
+
+def _audit_response_payload(report_id, generation):
+    anomaly = generation.get("math_anomaly") or {"detected": False, "details": []}
+    return {
+        "report_id": report_id,
+        "math_anomaly_detected": bool(anomaly.get("detected")),
+        "audit": {
+            "report_id": report_id,
+            "math_anomaly_detected": bool(anomaly.get("detected")),
+            "anomaly_details": anomaly.get("details", []),
+            "reasoning_trace_available": bool(generation.get("reasoning_trace")),
+        },
+    }
 
 
 def create_app():
@@ -953,6 +1543,7 @@ def create_app():
     configure_structured_logging(app)
     limiter = _configure_rate_limiting(app)
     license_store = LicenseStore()
+    audit_store = AuditReportStore(license_store)
 
     @app.before_request
     def begin_request_context():
@@ -968,7 +1559,7 @@ def create_app():
     @app.after_request
     def finish_request_context(response):
         response.headers["X-Request-ID"] = REQUEST_ID.get()
-        if request.path in {"/verify-and-generate", "/refine"}:
+        if request.path in {"/verify-and-generate", "/refine"} or request.path.startswith("/admin/audit/"):
             response.headers["Cache-Control"] = "no-store"
         log_event(
             logging.INFO,
@@ -991,6 +1582,39 @@ def create_app():
     def health_check():
         return jsonify({"status": "ok", "service": "gatekeeper"})
 
+    @app.get("/admin/audit/<report_id>")
+    def admin_audit(report_id):
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Audit access is restricted."}), 403
+
+        record = audit_store.get_report(report_id)
+        if not record:
+            return jsonify({"error": "Audit report not found."}), 404
+
+        trace = _json_loads_or_default(record.get("reasoning_trace"), {})
+        trace["ReportMetadata"] = {
+            "report_id": record["id"],
+            "created_at": record["created_at"],
+            "tenant_id": record["tenant_id"],
+            "request_type": record["request_type"],
+            "parent_report_id": record["parent_report_id"],
+            "source": record["source"],
+            "math_anomaly_detected": bool(record["math_anomaly_detected"]),
+            "anomaly_details": _json_loads_or_default(record.get("anomaly_details_json"), []),
+            "stats": _json_loads_or_default(record.get("stats_json"), {}),
+            "directive": _json_loads_or_default(record.get("directive_json"), {}),
+        }
+        return render_template_string(
+            AUDIT_PAGE,
+            report_id=record["id"],
+            created_at=record["created_at"],
+            report_source=record["source"] or "unknown",
+            request_type=record["request_type"],
+            badge_class="anomaly" if record["math_anomaly_detected"] else "",
+            badge_text="Math Anomaly Detected" if record["math_anomaly_detected"] else "Audit Clean",
+            trace_json=json.dumps(trace, indent=2, sort_keys=True),
+        )
+
     @app.post("/verify-and-generate")
     @_rate_limit(limiter)
     def verify_and_generate():
@@ -998,9 +1622,15 @@ def create_app():
         stats = payload.get("stats")
         license_key = str(payload.get("license_key", "")).strip()
         raw_directive = payload.get("directive") or {}
+        audit_context = payload.get("audit_context") or {}
         directive = _sanitize_directive(raw_directive)
         TENANT_ID.set(_tenant_id(license_key))
-        signed_payload = gatekeeper_payload(stats, license_key, {"directive": raw_directive} if raw_directive else None)
+        signed_extra = {}
+        if "directive" in payload:
+            signed_extra["directive"] = raw_directive
+        if "audit_context" in payload:
+            signed_extra["audit_context"] = audit_context
+        signed_payload = gatekeeper_payload(stats, license_key, signed_extra or None)
 
         try:
             _verify_signed_payload(signed_payload)
@@ -1033,16 +1663,29 @@ def create_app():
         )
 
         try:
-            generation = generate_narrative_result(stats, directive=directive)
+            generation = generate_narrative_result(stats, directive=directive, audit_context=audit_context)
             TOKEN_USAGE.set(generation.get("token_usage", DEFAULT_TOKEN_USAGE))
+            rag_triage = generation.get("rag_triage") or {}
+            report_id = audit_store.save_report(
+                tenant_id=TENANT_ID.get(),
+                request_type="generation",
+                stats=stats,
+                narrative=generation["narrative"],
+                source=generation.get("source"),
+                directive=directive,
+                reasoning_trace=generation.get("reasoning_trace", {}),
+                math_anomaly=generation.get("math_anomaly", {}),
+                audit_context=audit_context,
+            )
             log_event(
                 logging.INFO,
                 "generation_complete",
+                report_id=report_id,
                 source=generation.get("source"),
                 circuit_state=generation.get("circuit_state"),
-                context_relevance=generation.get("rag_triage", {}).get("context_relevance"),
-                groundedness=generation.get("rag_triage", {}).get("groundedness"),
-                answer_relevance=generation.get("rag_triage", {}).get("answer_relevance"),
+                context_relevance=rag_triage.get("context_relevance"),
+                groundedness=rag_triage.get("groundedness"),
+                answer_relevance=rag_triage.get("answer_relevance"),
             )
             return jsonify(
                 {
@@ -1050,7 +1693,8 @@ def create_app():
                     "source": generation.get("source"),
                     "circuit_state": generation.get("circuit_state"),
                     "token_usage": generation.get("token_usage", DEFAULT_TOKEN_USAGE),
-                    "rag_triage": generation.get("rag_triage", {}),
+                    "rag_triage": rag_triage,
+                    **_audit_response_payload(report_id, generation),
                 }
             )
         except Exception as exc:
@@ -1066,16 +1710,16 @@ def create_app():
         narrative = str(payload.get("narrative", "")).strip()
         instruction = str(payload.get("instruction", "")).strip()
         raw_directive = payload.get("directive") or {}
+        parent_report_id = str(payload.get("parent_report_id", "")).strip()
         directive = _sanitize_directive(raw_directive)
-        signed_payload = gatekeeper_payload(
-            stats,
-            license_key,
-            {
-                "narrative": narrative,
-                "instruction": instruction,
-                "directive": raw_directive,
-            },
-        )
+        signed_extra = {
+            "narrative": narrative,
+            "instruction": instruction,
+            "directive": raw_directive,
+        }
+        if "parent_report_id" in payload:
+            signed_extra["parent_report_id"] = parent_report_id
+        signed_payload = gatekeeper_payload(stats, license_key, signed_extra)
         TENANT_ID.set(_tenant_id(license_key))
 
         try:
@@ -1095,6 +1739,12 @@ def create_app():
         if not instruction:
             return jsonify({"error": "Refinement instruction is required."}), 400
 
+        audit_context = payload.get("audit_context") or {}
+        if not audit_context and parent_report_id:
+            parent_report = audit_store.get_report(parent_report_id)
+            if parent_report:
+                audit_context = _json_loads_or_default(parent_report.get("audit_context_json"), {})
+
         firewall_decision = SEMANTIC_FIREWALL.inspect(stats, request_context=instruction)
         if not firewall_decision["allowed"]:
             log_event(
@@ -1106,16 +1756,35 @@ def create_app():
             return jsonify({"error": "Semantic firewall rejected the request.", "firewall": firewall_decision}), 400
 
         try:
-            refinement = generate_refinement_result(stats, narrative, instruction, directive=directive)
+            refinement = generate_refinement_result(
+                stats,
+                narrative,
+                instruction,
+                directive=directive,
+                audit_context=audit_context,
+            )
             TOKEN_USAGE.set(refinement.get("token_usage", DEFAULT_TOKEN_USAGE))
+            report_id = audit_store.save_report(
+                tenant_id=TENANT_ID.get(),
+                request_type="refinement",
+                parent_report_id=parent_report_id or None,
+                stats=stats,
+                narrative=refinement["narrative"],
+                source=refinement.get("source"),
+                directive=directive,
+                reasoning_trace=refinement.get("reasoning_trace", {}),
+                math_anomaly=refinement.get("math_anomaly", {}),
+                audit_context=audit_context,
+            )
             log_event(
                 logging.INFO,
                 "refinement_complete",
+                report_id=report_id,
                 source=refinement.get("source"),
                 model=refinement.get("model"),
                 fact_check_locked=refinement.get("fact_check_locked"),
             )
-            return jsonify(refinement)
+            return jsonify({**refinement, **_audit_response_payload(report_id, refinement)})
         except Exception as exc:
             log_event(logging.ERROR, "gatekeeper_refinement_failed", error=str(exc))
             return jsonify({"error": f"Gatekeeper refinement failed: {str(exc)}"}), 502

@@ -1466,6 +1466,8 @@
           createdAt: new Date().toISOString(),
           sourceLabel,
           report: {
+            report_id: data.report_id || null,
+            audit: data.audit || {},
             stats: data.stats,
             narrative: data.narrative,
             directive: data.directive || currentReportDirective,
@@ -2132,7 +2134,8 @@
               stats: currentReportData.stats,
               narrative: originalNarrative,
               instruction,
-              directive: currentReportDirective
+              directive: currentReportDirective,
+              report_id: currentReportData.report_id || null
             })
           });
 
@@ -2146,7 +2149,9 @@
           currentReportData = {
             ...currentReportData,
             narrative: latestNarrative,
-            directive: currentReportDirective
+            directive: currentReportDirective,
+            report_id: data.report_id || currentReportData.report_id || null,
+            audit: data.audit || currentReportData.audit || {}
           };
           replaceNarrativeContent(latestNarrative);
           input.value = "";

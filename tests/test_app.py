@@ -44,6 +44,10 @@ def test_admin_page(client):
 
     assert response.status_code == 200
     assert b"Workspace Admin" in response.data
+    assert b"Audit" in response.data
+    assert b"View Audit" in response.data
+    assert b"narrativeai.localHistoryVault" in response.data
+    assert b"Math anomaly detected" in response.data
 
 
 def test_index_has_nonce_csp(client):
@@ -220,12 +224,13 @@ def test_upload_valid_csv(client):
 def test_refine_route_calls_refinement_backend(client, monkeypatch):
     captured = {}
 
-    def fake_refine_report(stats, narrative, instruction, license_key, directive=None):
+    def fake_refine_report(stats, narrative, instruction, license_key, directive=None, report_id=None):
         captured["stats"] = stats
         captured["narrative"] = narrative
         captured["instruction"] = instruction
         captured["license_key"] = license_key
         captured["directive"] = directive
+        captured["report_id"] = report_id
         return {
             "narrative": "Refined narrative",
             "model": "gpt-4o-mini",
@@ -242,6 +247,7 @@ def test_refine_route_calls_refinement_backend(client, monkeypatch):
             "narrative": "Original narrative",
             "instruction": "Make it sharper",
             "directive": {"tone": "Precise", "goal": "Retention"},
+            "report_id": "report-123",
         },
     )
     payload = response.get_json()
@@ -252,3 +258,4 @@ def test_refine_route_calls_refinement_backend(client, monkeypatch):
     assert captured["license_key"] == "DEMO123"
     assert captured["instruction"] == "Make it sharper"
     assert captured["directive"] == {"tone": "Precise", "goal": "Retention"}
+    assert captured["report_id"] == "report-123"

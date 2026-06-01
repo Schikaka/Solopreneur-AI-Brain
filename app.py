@@ -125,7 +125,8 @@ def create_app(test_config=None):
 
     @app.route("/admin")
     def admin():
-        return render_template("admin.html")
+        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+        return render_template("admin.html", gatekeeper_url=gatekeeper_url)
 
     @app.get("/api/sample")
     def sample_report():
@@ -198,6 +199,7 @@ def create_app(test_config=None):
         narrative = str(payload.get("narrative", "")).strip()
         instruction = str(payload.get("instruction", "")).strip()
         directive = sanitize_directive(payload.get("directive"))
+        report_id = str(payload.get("report_id", "")).strip()
 
         if not license_key:
             return jsonify({"error": "Enter a valid license key to refine reports."}), 403
@@ -209,7 +211,16 @@ def create_app(test_config=None):
             return jsonify({"error": "Refinement instruction is required."}), 400
 
         try:
-            return jsonify(refine_report(stats, narrative, instruction, license_key, directive=directive))
+            return jsonify(
+                refine_report(
+                    stats,
+                    narrative,
+                    instruction,
+                    license_key,
+                    directive=directive,
+                    report_id=report_id or None,
+                )
+            )
         except PermissionError as exc:
             return jsonify({"error": str(exc)}), 403
         except Exception as exc:

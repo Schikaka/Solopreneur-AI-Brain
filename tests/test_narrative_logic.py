@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from narrative_logic import analyze_data, get_top_3_insights, read_marketing_csv, refine_report
+from narrative_logic import analyze_data, build_audit_context, get_top_3_insights, read_marketing_csv, refine_report
 
 
 def test_analyze_data_returns_expected_sample_stats():
@@ -39,7 +39,15 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
             return None
 
         def json(self):
-            return {"narrative": "Narrative from gatekeeper"}
+            return {
+                "narrative": "Narrative from gatekeeper",
+                "report_id": "report-abc",
+                "audit": {
+                    "report_id": "report-abc",
+                    "math_anomaly_detected": False,
+                    "reasoning_trace_available": True,
+                },
+            }
 
     def post(url, json, headers, timeout):
         captured["url"] = url
@@ -57,9 +65,14 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert captured["payload"]["license_key"] == "DEMO123"
     assert captured["payload"]["stats"]["total_revenue"] == 13650.0
     assert captured["payload"]["directive"] == {"tone": "Boardroom", "goal": "Budget Request"}
+    assert captured["payload"]["audit_context"]["columns"]["Revenue"] == 7
+    assert captured["payload"]["audit_context"]["source_rows"][0]["csv_row_index"] == 2
+    assert captured["payload"]["audit_context"]["aggregate_map"]["total_revenue"]["column"] == "Revenue"
     assert captured["headers"]["Authorization"].startswith("Bearer ")
     assert len(captured["headers"]["X-Payload-SHA256"]) == 64
     assert result["narrative"] == "Narrative from gatekeeper"
+    assert result["report_id"] == "report-abc"
+    assert result["audit"]["reasoning_trace_available"] is True
 
 
 def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
@@ -106,6 +119,20 @@ def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
     assert len(captured["headers"]["X-Payload-SHA256"]) == 64
     assert result["model"] == "gpt-4o-mini"
     assert result["fact_check_locked"] is True
+
+
+def test_build_audit_context_maps_stats_to_csv_cells():
+    df = read_marketing_csv("dummy_marketing_data.csv")
+    stats = analyze_data("dummy_marketing_data.csv")["stats"]
+
+    audit_context = build_audit_context(df, stats)
+
+    assert audit_context["columns"]["Revenue"] == 7
+    assert audit_context["source_rows"][0]["csv_row_index"] == 2
+    assert audit_context["source_rows"][0]["columns"]["Revenue"]["column_index"] == 7
+    assert audit_context["aggregate_map"]["total_spend"]["csv_rows"][0] == 2
+    assert len(audit_context["aggregate_map"]["total_spend"]["csv_rows"]) == len(df)
+    assert audit_context["aggregate_map"]["top_campaign"]["value"] == "Summer Sale Search"
 
 
 def test_get_top_3_insights_returns_daily_significance():

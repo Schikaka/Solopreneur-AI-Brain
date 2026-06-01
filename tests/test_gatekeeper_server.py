@@ -5,6 +5,7 @@ from gatekeeper_server import (
     IdempotentCache,
     SimpleCircuitBreaker,
     create_app,
+    detect_math_anomalies,
     generate_narrative_result,
     generate_refinement_result,
 )
@@ -42,6 +43,69 @@ def signed_headers_for_payload(payload, remote_ip=None):
 
 def post_signed(client, license_key, stats=None):
     payload = gatekeeper_payload(stats if stats is not None else {}, license_key)
+    return client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
+
+
+def sample_audit_context():
+    return {
+        "columns": {
+            "Date": 1,
+            "Campaign": 2,
+            "Spend": 3,
+            "Clicks": 4,
+            "Impressions": 5,
+            "Conversions": 6,
+            "Revenue": 7,
+        },
+        "source_rows": [
+            {
+                "row_index": 0,
+                "csv_row_index": 2,
+                "columns": {
+                    "Campaign": {"column_index": 2, "value": "Search"},
+                    "Spend": {"column_index": 3, "value": 250},
+                    "Revenue": {"column_index": 7, "value": 1000},
+                },
+            }
+        ],
+        "aggregate_map": {
+            "total_revenue": {
+                "stat_key": "total_revenue",
+                "column": "Revenue",
+                "column_index": 7,
+                "csv_rows": [2],
+                "value": 1000,
+            },
+            "total_spend": {
+                "stat_key": "total_spend",
+                "column": "Spend",
+                "column_index": 3,
+                "csv_rows": [2],
+                "value": 250,
+            },
+            "avg_roas": {
+                "stat_key": "avg_roas",
+                "calculation": "total_revenue / total_spend",
+                "csv_rows": [2],
+                "value": 4,
+            },
+            "total_conversions": {
+                "stat_key": "total_conversions",
+                "column": "Conversions",
+                "column_index": 6,
+                "csv_rows": [2],
+                "value": 10,
+            },
+        },
+    }
+
+
+def post_signed_with_audit(client, license_key, stats):
+    payload = gatekeeper_payload(
+        stats,
+        license_key,
+        {"audit_context": sample_audit_context(), "directive": {"tone": "Boardroom", "goal": "Budget Request"}},
+    )
     return client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
 
 
@@ -137,6 +201,9 @@ def test_gatekeeper_valid_license_returns_narrative_without_local_key(monkeypatc
     assert_boardroom_narrative(payload["narrative"])
     assert payload["source"] == "deterministic_fallback"
     assert payload["token_usage"]["total_tokens"] == 0
+    assert payload["report_id"]
+    assert payload["audit"]["reasoning_trace_available"] is True
+    assert payload["audit"]["math_anomaly_detected"] is False
 
 
 def test_gatekeeper_refine_without_local_key_returns_fact_locked_result(monkeypatch):
@@ -237,6 +304,49 @@ def test_openai_circuit_breaker_returns_stable_fallback(monkeypatch):
     assert second["source"] == "idempotent_cache"
     assert third["source"] == "idempotent_cache"
     assert third["circuit_state"] == "open"
+
+
+def test_math_anomaly_detection_flags_ai_number_drift():
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "avg_ctr": 2.5,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    report = detect_math_anomalies(
+        "The report claims $999.00 in secured return and 88.00% CTR.",
+        stats,
+        audit_context=sample_audit_context(),
+    )
+
+    assert report["detected"] is True
+    assert {item["raw"] for item in report["details"]} == {"88.00%"}
+
+
+def test_gatekeeper_saves_reasoning_trace_and_audit_view():
+    client = create_app().test_client()
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    response = post_signed_with_audit(client, "DEMO123", stats)
+    payload = response.get_json()
+    audit_response = client.get(f"/admin/audit/{payload['report_id']}")
+
+    assert response.status_code == 200
+    assert payload["audit"]["reasoning_trace_available"] is True
+    assert audit_response.status_code == 200
+    assert b"Enterprise Audit Trace" in audit_response.data
+    assert b"CredibilityMapping" in audit_response.data
+    assert b"csv_rows" in audit_response.data
+    assert b"column_index" in audit_response.data
 
 
 def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):

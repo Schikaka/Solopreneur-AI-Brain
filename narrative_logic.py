@@ -75,6 +75,16 @@ def _format_money(value):
     return f"${float(value):,.2f}"
 
 
+def _json_safe(value):
+    if pd.isna(value):
+        return None
+    if hasattr(value, "item"):
+        value = value.item()
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    return str(value)
+
+
 def sanitize_directive(directive):
     directive = directive if isinstance(directive, dict) else {}
     tone = str(directive.get("tone") or "Boardroom").strip().title()
@@ -195,9 +205,97 @@ def _post_gatekeeper(path, payload):
     )
 
 
-def get_ai_narrative(stats, license_key, directive=None):
+def build_audit_context(df, stats):
+    columns = list(df.columns)
+    column_indexes = {column: index + 1 for index, column in enumerate(columns)}
+    source_rows = []
+    normalized = df.reset_index(drop=True)
+    for row_index, row in normalized.iterrows():
+        source_rows.append(
+            {
+                "row_index": int(row_index),
+                "csv_row_index": int(row_index) + 2,
+                "columns": {
+                    column: {
+                        "column_index": column_indexes[column],
+                        "value": _json_safe(row[column]),
+                    }
+                    for column in columns
+                },
+            }
+        )
+
+    all_rows = [row["csv_row_index"] for row in source_rows]
+    top_campaign = stats.get("top_campaign")
+    top_campaign_rows = [
+        row["csv_row_index"]
+        for row in source_rows
+        if str((row["columns"].get("Campaign") or {}).get("value")) == str(top_campaign)
+    ]
+
+    return {
+        "columns": column_indexes,
+        "source_rows": source_rows,
+        "aggregate_map": {
+            "total_revenue": {
+                "stat_key": "total_revenue",
+                "calculation": "sum",
+                "column": "Revenue",
+                "column_index": column_indexes.get("Revenue"),
+                "csv_rows": all_rows,
+                "value": stats.get("total_revenue"),
+            },
+            "total_spend": {
+                "stat_key": "total_spend",
+                "calculation": "sum",
+                "column": "Spend",
+                "column_index": column_indexes.get("Spend"),
+                "csv_rows": all_rows,
+                "value": stats.get("total_spend"),
+            },
+            "avg_roas": {
+                "stat_key": "avg_roas",
+                "calculation": "total_revenue / total_spend",
+                "source_metrics": ["total_revenue", "total_spend"],
+                "csv_rows": all_rows,
+                "columns": [
+                    {"name": "Revenue", "column_index": column_indexes.get("Revenue")},
+                    {"name": "Spend", "column_index": column_indexes.get("Spend")},
+                ],
+                "value": stats.get("avg_roas"),
+            },
+            "total_conversions": {
+                "stat_key": "total_conversions",
+                "calculation": "sum",
+                "column": "Conversions",
+                "column_index": column_indexes.get("Conversions"),
+                "csv_rows": all_rows,
+                "value": stats.get("total_conversions"),
+            },
+            "top_campaign": {
+                "stat_key": "top_campaign",
+                "calculation": "highest summed Revenue by Campaign",
+                "columns": [
+                    {"name": "Campaign", "column_index": column_indexes.get("Campaign")},
+                    {"name": "Revenue", "column_index": column_indexes.get("Revenue")},
+                ],
+                "csv_rows": top_campaign_rows,
+                "value": top_campaign,
+            },
+        },
+    }
+
+
+def get_ai_narrative_result(stats, license_key, directive=None, audit_context=None):
     directive = sanitize_directive(directive)
-    payload = gatekeeper_payload(stats, license_key, {"directive": directive})
+    payload = gatekeeper_payload(
+        stats,
+        license_key,
+        {
+            "directive": directive,
+            "audit_context": audit_context or {},
+        },
+    )
 
     try:
         response = _post_gatekeeper("/verify-and-generate", payload)
@@ -205,24 +303,42 @@ def get_ai_narrative(stats, license_key, directive=None):
             error = response.json().get("error", "Invalid license key.")
             raise PermissionError(error)
         response.raise_for_status()
-        return response.json()["narrative"]
+        return response.json()
     except PermissionError:
         raise
     except Exception:
-        return _fallback_narrative(stats)
+        return {
+            "narrative": _fallback_narrative(stats),
+            "source": "deterministic_fallback",
+            "report_id": None,
+            "audit": {
+                "report_id": None,
+                "math_anomaly_detected": False,
+                "anomaly_details": [],
+                "reasoning_trace_available": False,
+            },
+        }
 
 
-def refine_report(stats, narrative, instruction, license_key, directive=None):
-    directive = sanitize_directive(directive)
-    payload = gatekeeper_payload(
+def get_ai_narrative(stats, license_key, directive=None, audit_context=None):
+    return get_ai_narrative_result(
         stats,
         license_key,
-        {
-            "narrative": str(narrative or "").strip(),
-            "instruction": str(instruction or "").strip(),
-            "directive": directive,
-        },
-    )
+        directive=directive,
+        audit_context=audit_context,
+    )["narrative"]
+
+
+def refine_report(stats, narrative, instruction, license_key, directive=None, report_id=None):
+    directive = sanitize_directive(directive)
+    extra = {
+        "narrative": str(narrative or "").strip(),
+        "instruction": str(instruction or "").strip(),
+        "directive": directive,
+    }
+    if report_id:
+        extra["parent_report_id"] = str(report_id)
+    payload = gatekeeper_payload(stats, license_key, extra)
 
     try:
         response = _post_gatekeeper("/refine", payload)
@@ -239,6 +355,13 @@ def refine_report(stats, narrative, instruction, license_key, directive=None):
             "source": "deterministic_refinement",
             "model": "gpt-4o-mini",
             "fact_check_locked": True,
+            "report_id": None,
+            "audit": {
+                "report_id": None,
+                "math_anomaly_detected": False,
+                "anomaly_details": [],
+                "reasoning_trace_available": False,
+            },
         }
 
 
@@ -401,14 +524,32 @@ def analyze_data(csv_source, license_key="", directive=None):
         "avg_roas": round(float(avg_roas), 2),
         "top_campaign": top_campaign,
     }
+    directive = sanitize_directive(directive)
+    audit_context = build_audit_context(df, stats)
+    narrative_result = (
+        get_ai_narrative_result(stats, license_key, directive=directive, audit_context=audit_context)
+        if license_key
+        else {
+            "narrative": _fallback_narrative(stats),
+            "report_id": None,
+            "audit": {
+                "report_id": None,
+                "math_anomaly_detected": False,
+                "anomaly_details": [],
+                "reasoning_trace_available": False,
+            },
+        }
+    )
 
     return {
         "stats": stats,
         "insights": get_insights(df),
         "top_daily_insights": get_top_3_insights(df),
         "daily_trends": build_daily_trends(df),
-        "directive": sanitize_directive(directive),
-        "narrative": get_ai_narrative(stats, license_key, directive=directive) if license_key else _fallback_narrative(stats),
+        "directive": directive,
+        "narrative": narrative_result.get("narrative", _fallback_narrative(stats)),
+        "report_id": narrative_result.get("report_id"),
+        "audit": narrative_result.get("audit", {}),
     }
 
 
