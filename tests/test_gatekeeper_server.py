@@ -177,6 +177,52 @@ def test_gatekeeper_index_page_is_visible():
     assert b"Verify And Generate" in response.data
 
 
+def test_gatekeeper_compliance_health_reports_security_controls():
+    client = create_app().test_client()
+
+    response = client.get("/admin/compliance-health")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert "database_encryption" in payload["checks"]
+    assert payload["checks"]["sast_scan"]["status"] == "passed"
+    assert payload["ips_blacklist_count"] == 0
+
+
+def test_honeypot_blacklists_ip_and_blocks_followup(capsys):
+    gatekeeper_server.HONEYPOT_BLACKLIST.clear()
+    client = create_app().test_client()
+    headers = {"X-Forwarded-For": "203.0.113.77"}
+
+    trap_response = client.get("/api/v1/debug_admin", headers=headers)
+    blocked_response = client.get("/healthz", headers=headers)
+    allowed_response = client.get("/healthz", headers={"X-Forwarded-For": "203.0.113.78"})
+    captured = capsys.readouterr().err.splitlines()
+    log_entries = [gatekeeper_server.json.loads(line) for line in captured if line.startswith("{")]
+
+    assert trap_response.status_code == 404
+    assert blocked_response.status_code == 403
+    assert allowed_response.status_code == 200
+    assert "203.0.113.77" in gatekeeper_server.HONEYPOT_BLACKLIST
+    assert any(
+        entry["event"] == "hacker_honeypot_triggered" and entry["level"] == "critical"
+        for entry in log_entries
+    )
+
+
+def test_startup_validation_blocks_failed_security_scan(monkeypatch):
+    monkeypatch.setattr(
+        gatekeeper_server,
+        "_run_security_scan",
+        lambda license_store=None: {"ok": False, "checks": {"sast_scan": {"ok": False, "detail": "boom"}}},
+    )
+    monkeypatch.setattr(gatekeeper_server, "_format_security_scan_failures", lambda result: "boom")
+
+    with pytest.raises(RuntimeError, match="boom"):
+        create_app()
+
+
 def test_gatekeeper_valid_license_returns_narrative_without_local_key(monkeypatch):
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.delenv("EMERGENT_LLM_KEY", raising=False)

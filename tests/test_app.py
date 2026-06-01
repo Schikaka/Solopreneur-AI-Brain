@@ -46,6 +46,11 @@ def test_admin_page(client):
     assert b"Workspace Admin" in response.data
     assert b"Audit" in response.data
     assert b"View Audit" in response.data
+    assert b"Security & Compliance Health" in response.data
+    assert b"Database Encryption" in response.data
+    assert b"SAST Scan" in response.data
+    assert b"IPS Blacklist" in response.data
+    assert b"/api/compliance-health" in response.data
     assert b"narrativeai.localHistoryVault" in response.data
     assert b"Math anomaly detected" in response.data
 
@@ -125,6 +130,38 @@ def test_system_status_degraded_when_gatekeeper_is_unavailable(client, monkeypat
     assert payload["status"] == "degraded"
     assert payload["message"] == "System Degraded"
     assert "optimizing resources" in payload["stability_notice"]
+
+
+def test_compliance_health_proxy(client, monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "ok": True,
+                "checks": {
+                    "database_encryption": {"ok": True, "status": "encrypted"},
+                    "sast_scan": {"ok": True, "status": "passed"},
+                    "ips_blacklist": {"ok": True, "status": "active", "count": 0},
+                },
+                "ips_blacklist_count": 0,
+            }
+
+    def get(url, timeout):
+        assert url == "http://gatekeeper.test/admin/compliance-health"
+        assert timeout == 1.5
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.get", get)
+
+    response = client.get("/api/compliance-health")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["checks"]["sast_scan"]["status"] == "passed"
 
 
 def test_app_has_no_upload_dir_config(client):

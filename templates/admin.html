@@ -417,6 +417,31 @@
         color: var(--amber);
       }
 
+      .status-row dd.error {
+        color: var(--red);
+      }
+
+      .compliance-widget {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+
+      .compliance-widget header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .compliance-widget .icon-button {
+        min-height: 34px;
+        padding: 0 10px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
       .audit-panel-head {
         display: flex;
         justify-content: space-between;
@@ -519,6 +544,11 @@
         .audit-entry {
           grid-template-columns: 1fr;
         }
+
+        .compliance-widget header {
+          align-items: flex-start;
+          flex-direction: column;
+        }
       }
     </style>
   </head>
@@ -618,6 +648,27 @@
               <dd id="audit-state">Checking</dd>
             </div>
           </dl>
+          <div class="compliance-widget" aria-label="Security and compliance health">
+            <header>
+              <h2>Security & Compliance Health</h2>
+              <button class="icon-button" id="refresh-compliance" type="button" aria-label="Refresh security and compliance health">Refresh</button>
+            </header>
+            <dl class="status-list">
+              <div class="status-row">
+                <dt>Database Encryption</dt>
+                <dd id="compliance-db-state">Checking</dd>
+              </div>
+              <div class="status-row">
+                <dt>SAST Scan</dt>
+                <dd id="compliance-sast-state">Checking</dd>
+              </div>
+              <div class="status-row">
+                <dt>IPS Blacklist</dt>
+                <dd id="compliance-ips-state">Checking</dd>
+              </div>
+            </dl>
+            <div class="admin-status" id="compliance-status" role="status" aria-live="polite"></div>
+          </div>
         </aside>
       </div>
     </main>
@@ -640,6 +691,11 @@
       const auditList = document.querySelector("#audit-list");
       const auditStatus = document.querySelector("#audit-status");
       const refreshAuditButton = document.querySelector("#refresh-audit");
+      const complianceDbState = document.querySelector("#compliance-db-state");
+      const complianceSastState = document.querySelector("#compliance-sast-state");
+      const complianceIpsState = document.querySelector("#compliance-ips-state");
+      const complianceStatus = document.querySelector("#compliance-status");
+      const refreshComplianceButton = document.querySelector("#refresh-compliance");
       const settingsTabs = document.querySelectorAll(".settings-tab");
       const settingsPanels = document.querySelectorAll(".settings-panel");
       const sampleReportCacheKey = "narrativeai.sampleReport";
@@ -795,6 +851,54 @@
         }
       }
 
+      function setComplianceState(element, label, isHealthy) {
+        element.textContent = label;
+        element.className = isHealthy ? "ready" : "error";
+      }
+
+      function complianceStatusLabel(check, fallback = "Unavailable") {
+        if (!check) {
+          return fallback;
+        }
+        const status = String(check.status || fallback).replace(/-/g, " ");
+        return status.charAt(0).toUpperCase() + status.slice(1);
+      }
+
+      async function refreshComplianceHealth() {
+        setComplianceState(complianceDbState, "Checking", true);
+        setComplianceState(complianceSastState, "Checking", true);
+        setComplianceState(complianceIpsState, "Checking", true);
+        setStatus(complianceStatus, "Refreshing compliance health...");
+
+        try {
+          const response = await fetch("/api/compliance-health");
+          const health = await response.json();
+          const checks = health.checks || {};
+          const databaseCheck = checks.database_encryption;
+          const sastCheck = checks.sast_scan;
+          const ipsCheck = checks.ips_blacklist;
+          const blacklistCount = Number(health.ips_blacklist_count ?? ipsCheck?.count ?? 0);
+
+          setComplianceState(complianceDbState, complianceStatusLabel(databaseCheck), Boolean(databaseCheck?.ok));
+          setComplianceState(complianceSastState, complianceStatusLabel(sastCheck), Boolean(sastCheck?.ok));
+          setComplianceState(complianceIpsState, `${blacklistCount} blocked`, Boolean(ipsCheck?.ok));
+
+          if (!response.ok || !health.ok) {
+            setStatus(complianceStatus, "Compliance health requires attention.", "error");
+            return health;
+          }
+
+          setStatus(complianceStatus, "Security controls validated.", "success");
+          return health;
+        } catch (error) {
+          setComplianceState(complianceDbState, "Unavailable", false);
+          setComplianceState(complianceSastState, "Unavailable", false);
+          setComplianceState(complianceIpsState, "Unavailable", false);
+          setStatus(complianceStatus, "Compliance health is unavailable.", "error");
+          return null;
+        }
+      }
+
       function updateLogoPreview() {
         logoPreview.innerHTML = agencyLogoDataUrl
           ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
@@ -913,10 +1017,12 @@
       });
 
       refreshAuditButton.addEventListener("click", () => refreshAuditList());
+      refreshComplianceButton.addEventListener("click", () => refreshComplianceHealth());
 
       updateLogoPreview();
       updateSummary();
       refreshAuditList();
+      refreshComplianceHealth();
       warmSampleReportCache();
     </script>
   </body>

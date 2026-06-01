@@ -1,6 +1,7 @@
 import json
 import hmac
 import hashlib
+import importlib.util
 import logging
 import os
 import re
@@ -8,6 +9,7 @@ import time
 import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
@@ -37,9 +39,12 @@ except ImportError:  # pragma: no cover - optional cache backend.
 
 load_dotenv()
 
+BASE_DIR = Path(__file__).parent
 OPENAI_TIMEOUT_SECONDS = 5
 GATEKEEPER_LIMIT = "5 per minute"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+HONEY_POT_PATH = "/api/v1/debug_admin"
+HONEYPOT_BLACKLIST = set()
 CMO_PILLARS = ("Execution Efficiency", "Campaign Momentum", "Optimization Pathways")
 STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
 DIRECTIVE_TONES = ("Boardroom", "Startup", "Precise", "Persuasive")
@@ -1538,12 +1543,71 @@ def _audit_response_payload(report_id, generation):
     }
 
 
+def _load_security_scan_module():
+    script_path = BASE_DIR / "tests" / "security_scan.py"
+    if not script_path.exists():
+        raise RuntimeError("Security scan script is missing: tests/security_scan.py")
+
+    spec = importlib.util.spec_from_file_location("narrativeai_security_scan", script_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Security scan script could not be loaded.")
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_security_scan(license_store=None):
+    module = _load_security_scan_module()
+    return module.run_security_scan(base_dir=BASE_DIR, license_store=license_store)
+
+
+def _format_security_scan_failures(result):
+    module = _load_security_scan_module()
+    return module.format_security_scan_failures(result)
+
+
+def run_startup_validation(license_store=None):
+    result = _run_security_scan(license_store=license_store)
+    if not result.get("ok"):
+        failure_summary = _format_security_scan_failures(result)
+        log_event(logging.CRITICAL, "startup_security_validation_failed", failures=failure_summary)
+        raise RuntimeError(f"Startup security validation failed: {failure_summary}")
+
+    log_event(
+        logging.INFO,
+        "startup_security_validation_passed",
+        database_encryption=result["checks"]["database_encryption"]["status"],
+        sast_scan=result["checks"]["sast_scan"]["status"],
+    )
+    return result
+
+
+def compliance_health_payload(scan_result):
+    payload = json.loads(json.dumps(scan_result or {}))
+    checks = payload.setdefault("checks", {})
+    checks["ips_blacklist"] = {
+        "ok": True,
+        "status": "active",
+        "detail": f"{len(HONEYPOT_BLACKLIST)} IP address(es) currently blacklisted.",
+        "count": len(HONEYPOT_BLACKLIST),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+    payload["ips_blacklist_count"] = len(HONEYPOT_BLACKLIST)
+    payload["ok"] = bool(payload.get("ok")) and checks["ips_blacklist"]["ok"]
+    payload["status"] = "pass" if payload["ok"] else "fail"
+    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
+    return payload
+
+
 def create_app():
     app = Flask(__name__)
     configure_structured_logging(app)
     limiter = _configure_rate_limiting(app)
     license_store = LicenseStore()
     audit_store = AuditReportStore(license_store)
+    startup_security_scan = run_startup_validation(license_store=license_store)
+    app.config["COMPLIANCE_HEALTH"] = startup_security_scan
 
     @app.before_request
     def begin_request_context():
@@ -1555,6 +1619,20 @@ def create_app():
             payload = request.get_json(silent=True) or {}
             tenant_id = _tenant_id(payload.get("license_key"))
         TENANT_ID.set(tenant_id)
+
+    @app.before_request
+    def enforce_honeypot_blacklist():
+        client_ip = _extract_client_ip()
+        if request.path == HONEY_POT_PATH:
+            HONEYPOT_BLACKLIST.add(client_ip)
+            log_event(logging.CRITICAL, "hacker_honeypot_triggered", ip=client_ip, path=request.path)
+            return jsonify({"error": "Not found."}), 404
+
+        if client_ip in HONEYPOT_BLACKLIST:
+            log_event(logging.WARNING, "blacklisted_ip_blocked", ip=client_ip, path=request.path)
+            return jsonify({"error": "Request blocked."}), 403
+
+        return None
 
     @app.after_request
     def finish_request_context(response):
@@ -1581,6 +1659,12 @@ def create_app():
     @app.get("/healthz")
     def health_check():
         return jsonify({"status": "ok", "service": "gatekeeper"})
+
+    @app.get("/admin/compliance-health")
+    def admin_compliance_health():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Compliance health access is restricted."}), 403
+        return jsonify(compliance_health_payload(app.config.get("COMPLIANCE_HEALTH", {})))
 
     @app.get("/admin/audit/<report_id>")
     def admin_audit(report_id):

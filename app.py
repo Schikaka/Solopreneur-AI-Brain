@@ -128,6 +128,41 @@ def create_app(test_config=None):
         gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
         return render_template("admin.html", gatekeeper_url=gatekeeper_url)
 
+    @app.get("/api/compliance-health")
+    def compliance_health():
+        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+        try:
+            response = requests.get(f"{gatekeeper_url}/admin/compliance-health", timeout=1.5)
+            response.raise_for_status()
+            return jsonify(response.json())
+        except Exception:
+            return jsonify(
+                {
+                    "ok": False,
+                    "status": "degraded",
+                    "checks": {
+                        "database_encryption": {
+                            "ok": False,
+                            "status": "unavailable",
+                            "detail": "Gatekeeper compliance endpoint is unavailable.",
+                        },
+                        "sast_scan": {
+                            "ok": False,
+                            "status": "unavailable",
+                            "detail": "Gatekeeper compliance endpoint is unavailable.",
+                        },
+                        "ips_blacklist": {
+                            "ok": False,
+                            "status": "unavailable",
+                            "detail": "Gatekeeper compliance endpoint is unavailable.",
+                            "count": 0,
+                        },
+                    },
+                    "ips_blacklist_count": 0,
+                    "stability_notice": STABILITY_NOTICE,
+                }
+            ), 503
+
     @app.get("/api/sample")
     def sample_report():
         license_key = request.args.get("license_key") or os.getenv("DEMO_LICENSE_KEY", "DEMO123")
