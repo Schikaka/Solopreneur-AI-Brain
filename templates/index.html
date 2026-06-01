@@ -470,7 +470,7 @@
 
       .directive-grid {
         display: grid;
-        grid-template-columns: 1fr 1fr;
+        grid-template-columns: repeat(auto-fit, minmax(118px, 1fr));
         gap: 10px;
       }
 
@@ -1650,6 +1650,14 @@
                       <option>Retention</option>
                     </select>
                   </div>
+                  <div class="directive-field">
+                    <label for="directive-business-type">Business Type</label>
+                    <select id="directive-business-type" name="business_type" aria-label="Select business type">
+                      <option>E-commerce</option>
+                      <option>B2B SaaS</option>
+                      <option>Local Service</option>
+                    </select>
+                  </div>
                 </div>
                 <div class="directive-note">Fact-Check Lock keeps CSV numbers unchanged through generation and refinement.</div>
               </div>
@@ -1783,6 +1791,7 @@
       const directivePanel = document.querySelector("#directive-panel");
       const directiveTone = document.querySelector("#directive-tone");
       const directiveGoal = document.querySelector("#directive-goal");
+      const directiveBusinessType = document.querySelector("#directive-business-type");
       const systemStatus = document.querySelector("#system-status");
       const systemStatusText = document.querySelector("#system-status-text");
       const mobileMenuButton = document.querySelector("#mobile-menu-button");
@@ -1825,7 +1834,7 @@
       const drawerMediaQuery = window.matchMedia("(max-width: 767px)");
       let latestNarrative = "";
       let currentReportData = null;
-      let currentReportDirective = { tone: "Boardroom", goal: "Budget Request" };
+      let currentReportDirective = { tone: "Boardroom", goal: "Budget Request", business_type: "E-commerce" };
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
       let stripePaymentLink = String(initialStripePaymentLink || "").trim();
       let historyDbPromise = null;
@@ -1852,12 +1861,13 @@
       function getDirective() {
         return {
           tone: directiveTone?.value || "Boardroom",
-          goal: directiveGoal?.value || "Budget Request"
+          goal: directiveGoal?.value || "Budget Request",
+          business_type: directiveBusinessType?.value || "E-commerce"
         };
       }
 
       function directiveLabel(directive = currentReportDirective) {
-        return `${directive.tone || "Boardroom"} / ${directive.goal || "Budget Request"}`;
+        return `${directive.tone || "Boardroom"} / ${directive.goal || "Budget Request"} / ${directive.business_type || "E-commerce"}`;
       }
 
       function selectedCsvFiles() {
@@ -2941,7 +2951,8 @@
         const directive = data.directive || currentReportDirective || getDirective();
         currentReportDirective = {
           tone: directive.tone || "Boardroom",
-          goal: directive.goal || "Budget Request"
+          goal: directive.goal || "Budget Request",
+          business_type: directive.business_type || "E-commerce"
         };
         data.directive = currentReportDirective;
         currentReportData = data;
@@ -3124,6 +3135,7 @@
         body.append("license_key", licenseKey);
         body.append("tone", directive.tone);
         body.append("goal", directive.goal);
+        body.append("business_type", directive.business_type);
 
         try {
           closeDrawer({ focus: false });
@@ -3172,7 +3184,7 @@
         }
       });
 
-      [directiveTone, directiveGoal].forEach((selector) => {
+      [directiveTone, directiveGoal, directiveBusinessType].forEach((selector) => {
         selector.addEventListener("change", () => {
           currentReportDirective = getDirective();
           if (selectedCsvFiles().length) {

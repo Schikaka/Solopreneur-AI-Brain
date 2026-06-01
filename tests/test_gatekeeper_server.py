@@ -795,7 +795,7 @@ def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
         "**Executive CMO Brief**\n"
         "The portfolio secured $1,000.00 in secured return from $250.00 in deployed capital.\n\n"
         "**Execution Efficiency**\n"
-        "Capital efficiency is strong at 4.00x ROAS.\n\n"
+        "Capital efficiency is strong at 4.00x ROAS, with MER and LTV:CAC protected as the e-commerce guardrails.\n\n"
         "**Campaign Momentum**\n"
         "Search is the clear momentum driver.\n\n"
         "**Optimization Pathways**\n"
@@ -840,6 +840,10 @@ def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
     assert "Rule of Three" in system_prompt
     assert "PAS" in system_prompt
     assert "Strategic Attribution" in system_prompt
+    assert "Niche-Specific Intelligence for E-commerce" in system_prompt
+    assert "MER" in system_prompt
+    assert "LTV:CAC" in system_prompt
+    assert "business_type=E-commerce" in user_prompt
     assert "budget reallocation" in user_prompt
     assert "channel-specific efficiency ratios" in user_prompt
     assert "Strategic Recommendations" in user_prompt
@@ -854,7 +858,7 @@ def test_openai_generation_retries_once_when_truth_verification_fails(monkeypatc
         "**Executive CMO Brief**\n"
         "The portfolio generated $999.00 in secured return from $250.00 in deployed capital.\n\n"
         "**Execution Efficiency**\n"
-        "Capital efficiency is strong at 4.00x ROAS.\n\n"
+        "Capital efficiency is strong at 4.00x ROAS, with MER and LTV:CAC protected as the e-commerce guardrails.\n\n"
         "**Campaign Momentum**\n"
         "Search is the clear momentum driver.\n\n"
         "**Optimization Pathways**\n"
@@ -934,6 +938,76 @@ def test_deterministic_generation_explains_channel_synergy():
     assert "Shift incremental budget" in result["narrative"]
 
 
+def test_deterministic_generation_enforces_business_type_terminology():
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    ecommerce = generate_narrative_result(stats, directive={"business_type": "E-commerce"})["narrative"]
+    b2b = generate_narrative_result(stats, directive={"business_type": "B2B SaaS"})["narrative"]
+    local = generate_narrative_result(stats, directive={"business_type": "Local Service"})["narrative"]
+
+    assert "MER" in ecommerce
+    assert "LTV:CAC" in ecommerce
+    assert "Pipeline Velocity" in b2b
+    assert "GMB Calls" in local
+    assert "Booked Jobs" in local
+
+
+def test_openai_generation_falls_back_when_niche_terms_are_missing(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
+    monkeypatch.setattr(gatekeeper_server, "IDEMPOTENT_CACHE", IdempotentCache())
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "content": (
+                                "**Executive CMO Brief**\n"
+                                "The portfolio generated $1,000.00 in secured return from $250.00 in deployed capital.\n\n"
+                                "**Execution Efficiency**\n"
+                                "Capital efficiency is strong at 4.00x ROAS.\n\n"
+                                "**Campaign Momentum**\n"
+                                "Search is the clear momentum driver.\n\n"
+                                "**Optimization Pathways**\n"
+                                "The next step is disciplined scale.\n\n"
+                                "**Strategic Recommendations**\n"
+                                "1. Scale the strongest segment.\n"
+                                "2. Protect return quality.\n"
+                                "3. Review momentum weekly."
+                            )
+                        }
+                    }
+                ],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            }
+
+    monkeypatch.setattr("gatekeeper_server.requests.post", lambda *args, **kwargs: Response())
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    result = generate_narrative_result(stats, directive={"business_type": "Local Service"})
+
+    assert result["source"] == "contract_fallback"
+    assert "GMB Calls" in result["narrative"]
+    assert "Booked Jobs" in result["narrative"]
+
+
 def test_openai_refinement_uses_gpt_4o_mini_and_fact_lock(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "test-key")
     monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
@@ -943,7 +1017,7 @@ def test_openai_refinement_uses_gpt_4o_mini_and_fact_lock(monkeypatch):
         "**Executive CMO Brief**\n"
         "The portfolio generated $1,000.00 in secured return from $250.00 in deployed capital.\n\n"
         "**Execution Efficiency**\n"
-        "Capital efficiency is strong at 4.00x ROAS.\n\n"
+        "Capital efficiency is strong at 4.00x ROAS, with MER and LTV:CAC protected as the e-commerce guardrails.\n\n"
         "**Campaign Momentum**\n"
         "Search is the clear momentum driver.\n\n"
         "**Optimization Pathways**\n"
@@ -991,8 +1065,10 @@ def test_openai_refinement_uses_gpt_4o_mini_and_fact_lock(monkeypatch):
     assert result["fact_check_locked"] is True
     assert "FACT-CHECK LOCK" in system_prompt
     assert "Do not change" in system_prompt
+    assert "Niche-Specific Intelligence for E-commerce" in system_prompt
     assert '"total_revenue": 1000' in user_prompt
     assert "tone=Precise; goal=Retention" in user_prompt
+    assert "business_type=E-commerce" in user_prompt
 
 
 def test_openai_refinement_falls_back_when_numbers_change(monkeypatch):

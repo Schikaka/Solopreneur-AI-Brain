@@ -41,6 +41,7 @@ CHANNEL_FILENAME_HINTS = (
 AI_TIMEOUT_SECONDS = 30
 DIRECTIVE_TONES = {"Boardroom", "Startup", "Precise", "Persuasive"}
 DIRECTIVE_GOALS = {"Budget Request", "Performance Fix", "Retention"}
+DIRECTIVE_BUSINESS_TYPES = ("E-commerce", "B2B SaaS", "Local Service")
 DEFAULT_GATEKEEPER_URL = "http://localhost:5001"
 DEFAULT_RENDER_URL = "https://narrativeai-gatekeeper.onrender.com"
 
@@ -160,14 +161,53 @@ def sanitize_directive(directive):
     directive = directive if isinstance(directive, dict) else {}
     tone = str(directive.get("tone") or "Boardroom").strip().title()
     goal = str(directive.get("goal") or "Budget Request").strip().title()
+    business_type = _normalize_business_type(directive.get("business_type"))
     if tone not in DIRECTIVE_TONES:
         tone = "Boardroom"
     if goal not in DIRECTIVE_GOALS:
         goal = "Budget Request"
-    return {"tone": tone, "goal": goal}
+    return {"tone": tone, "goal": goal, "business_type": business_type}
 
 
-def _fallback_narrative(stats):
+def _normalize_business_type(value):
+    normalized = re.sub(r"[\s_-]+", " ", str(value or "")).strip().lower()
+    aliases = {
+        "ecommerce": "E-commerce",
+        "e commerce": "E-commerce",
+        "e-commerce": "E-commerce",
+        "b2b": "B2B SaaS",
+        "b2b saas": "B2B SaaS",
+        "b2b software": "B2B SaaS",
+        "local": "Local Service",
+        "local service": "Local Service",
+        "local services": "Local Service",
+    }
+    return aliases.get(normalized, DIRECTIVE_BUSINESS_TYPES[0])
+
+
+def _niche_context(business_type):
+    if business_type == "Local Service":
+        return {
+            "executive": "Local Service performance should be read through Map Pack Visibility, GMB Calls, Booked Jobs, and Review Velocity.",
+            "efficiency": "The key local-market test is whether deployed capital becomes qualified Phone Calls and Booked Jobs.",
+            "scorecard": "Track GMB Calls, Booked Jobs, and review velocity weekly.",
+        }
+    if business_type == "B2B SaaS":
+        return {
+            "executive": "B2B SaaS performance should be read through Pipeline Velocity, marketing-sourced pipeline %, and SQL Conversion.",
+            "efficiency": "The key revenue-cycle test is whether deployed capital accelerates Pipeline Velocity.",
+            "scorecard": "Track Pipeline Velocity, marketing-sourced pipeline %, and SQL Conversion weekly.",
+        }
+    return {
+        "executive": "E-commerce performance should be read through MER, LTV:CAC, Portfolio Efficiency, and payback period discipline.",
+        "efficiency": "The key portfolio test is whether MER and LTV:CAC remain healthy as channel spend scales.",
+        "scorecard": "Track MER, LTV:CAC, Portfolio Efficiency, and payback periods weekly.",
+    }
+
+
+def _fallback_narrative(stats, directive=None):
+    directive = sanitize_directive(directive)
+    niche = _niche_context(directive["business_type"])
     total_revenue = float(stats.get("total_revenue", 0))
     total_spend = float(stats.get("total_spend", 0))
     avg_roas = float(stats.get("blended_roas", stats.get("avg_roas", 0)))
@@ -209,10 +249,10 @@ def _fallback_narrative(stats):
         f"The portfolio generated {_format_money(total_revenue)} in secured return from "
         f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x blended ROAS profile "
         f"and {total_conversions:,} conversions. Momentum is anchored by {top_campaign}, giving leadership "
-        "a clear signal for where disciplined scaling should begin.\n\n"
+        f"a clear signal for where disciplined scaling should begin. {niche['executive']}\n\n"
         "**Execution Efficiency**\n"
         f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x on a blended basis. "
-        "This creates a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
+        f"This creates a practical benchmark for budget decisions, channel prioritization, and margin protection. {niche['efficiency']}\n\n"
         "**Campaign Momentum**\n"
         f"{awareness_channel} is shaping the awareness signal while {conversion_channel} is converting secured return. "
         f"{top_campaign} remains the primary campaign proof point, so the strategic objective is to connect upper-funnel demand "
@@ -223,7 +263,7 @@ def _fallback_narrative(stats):
         "**Strategic Recommendations**\n"
         f"1. Reallocate incremental deployed capital toward {top_channel} and closely related high-intent segments.\n"
         f"2. Use {awareness_channel} to expand demand creation while {conversion_channel} captures the highest-return intent.\n"
-        "3. Establish a weekly executive scorecard around secured return, ROAS, conversions, and campaign momentum."
+        f"3. {niche['scorecard']}"
     )
 
 
@@ -504,7 +544,7 @@ def get_ai_narrative_result(stats, license_key, directive=None, audit_context=No
         raise
     except Exception:
         return {
-            "narrative": _fallback_narrative(stats),
+            "narrative": _fallback_narrative(stats, directive=directive),
             "source": "deterministic_fallback",
             "report_id": None,
             "audit": {
@@ -834,7 +874,7 @@ def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
         )
         if license_key
         else {
-            "narrative": _fallback_narrative(stats),
+            "narrative": _fallback_narrative(stats, directive=directive),
             "report_id": None,
             "audit": {
                 "report_id": None,
@@ -855,7 +895,7 @@ def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
         "channel_sources": channel_sources,
         "daily_trends": build_daily_trends(df),
         "directive": directive,
-        "narrative": narrative_result.get("narrative", _fallback_narrative(stats)),
+        "narrative": narrative_result.get("narrative", _fallback_narrative(stats, directive=directive)),
         "report_id": narrative_result.get("report_id"),
         "audit": narrative_result.get("audit", {}),
     }

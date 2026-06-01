@@ -77,7 +77,11 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert captured["payload"]["stats"]["total_revenue"] == 13650.0
     assert captured["payload"]["stats"]["blended_roas"] == 4.58
     assert captured["payload"]["stats"]["channel_metrics"][0]["channel"] == "Dummy Marketing Data"
-    assert captured["payload"]["directive"] == {"tone": "Boardroom", "goal": "Budget Request"}
+    assert captured["payload"]["directive"] == {
+        "tone": "Boardroom",
+        "goal": "Budget Request",
+        "business_type": "E-commerce",
+    }
     assert captured["payload"]["audit_context"]["columns"]["Revenue"] == 7
     assert captured["payload"]["audit_context"]["source_rows"][0]["csv_row_index"] == 2
     assert captured["payload"]["audit_context"]["aggregate_map"]["total_revenue"]["column"] == "Revenue"
@@ -222,7 +226,7 @@ def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
         "Original narrative",
         "Make it more persuasive",
         "DEMO123",
-        directive={"tone": "Persuasive", "goal": "Budget Request"},
+        directive={"tone": "Persuasive", "goal": "Budget Request", "business_type": "B2B SaaS"},
         device_auth={
             "hardware_id": "a" * 64,
             "device_hmac": "b" * 64,
@@ -238,7 +242,11 @@ def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
     assert captured["payload"]["stats"]["total_revenue"] == 1000
     assert captured["payload"]["narrative"] == "Original narrative"
     assert captured["payload"]["instruction"] == "Make it more persuasive"
-    assert captured["payload"]["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
+    assert captured["payload"]["directive"] == {
+        "tone": "Persuasive",
+        "goal": "Budget Request",
+        "business_type": "B2B SaaS",
+    }
     assert captured["headers"]["Authorization"].startswith("Bearer ")
     assert len(captured["headers"]["X-Payload-SHA256"]) == 64
     assert captured["headers"]["X-Device-ID"] == "a" * 64

@@ -280,6 +280,25 @@ def scan_static_controls(base_dir):
             "required": ("Suggest a Feature", "feedback-panel", "/api/feedback", "submitStrategistFeedback"),
         },
         {
+            "name": "Niche-specific business type selector",
+            "path": "templates/index.html",
+            "required": ("directive-business-type", "E-commerce", "B2B SaaS", "Local Service", "business_type"),
+        },
+        {
+            "name": "Niche-specific intelligence prompt",
+            "path": "gatekeeper_server.py",
+            "required": (
+                "NICHE_KNOWLEDGE_BASE",
+                "MER",
+                "LTV:CAC",
+                "Pipeline Velocity",
+                "GMB Calls",
+                "Booked Jobs",
+                "_build_elite_cmo_system_prompt",
+                "_has_required_niche_terms",
+            ),
+        },
+        {
             "name": "Cloudflare CDN guide",
             "path": "README.md",
             "required": ("Cloudflare CDN Setup", "Cache Rules", "Bot Management", "Full (strict)", "/api/*"),

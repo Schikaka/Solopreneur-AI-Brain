@@ -442,6 +442,7 @@ def create_app(test_config=None):
             {
                 "tone": request.form.get("tone", ""),
                 "goal": request.form.get("goal", ""),
+                "business_type": request.form.get("business_type", ""),
             }
         )
 

@@ -122,6 +122,11 @@ def test_index_has_nonce_csp(client):
     assert b"Strategic Directive" in response.data
     assert b"directive-tone" in response.data
     assert b"directive-goal" in response.data
+    assert b"directive-business-type" in response.data
+    assert b"Business Type" in response.data
+    assert b"E-commerce" in response.data
+    assert b"B2B SaaS" in response.data
+    assert b"Local Service" in response.data
     assert b"Tweak this report..." in response.data
     assert b"/refine" in response.data
     assert b"Fact-Check Lock" in response.data
@@ -573,6 +578,7 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
             "license_key": "DEMO123",
             "tone": "Persuasive",
             "goal": "Budget Request",
+            "business_type": "Local Service",
         },
         content_type="multipart/form-data",
         headers=DEVICE_HEADERS,
@@ -583,7 +589,11 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
     assert captured["payload"] == csv_bytes
     assert captured["filename"] == "report.csv"
     assert captured["license_key"] == "DEMO123"
-    assert captured["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
+    assert captured["directive"] == {
+        "tone": "Persuasive",
+        "goal": "Budget Request",
+        "business_type": "Local Service",
+    }
     assert captured["device_auth"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]
 
 
@@ -698,7 +708,7 @@ def test_refine_route_calls_refinement_backend(client, monkeypatch):
             "stats": {"total_revenue": 300, "total_spend": 100, "avg_roas": 3},
             "narrative": "Original narrative",
             "instruction": "Make it sharper",
-            "directive": {"tone": "Precise", "goal": "Retention"},
+            "directive": {"tone": "Precise", "goal": "Retention", "business_type": "B2B SaaS"},
             "report_id": "report-123",
         },
         headers=DEVICE_HEADERS,
@@ -710,6 +720,6 @@ def test_refine_route_calls_refinement_backend(client, monkeypatch):
     assert payload["fact_check_locked"] is True
     assert captured["license_key"] == "DEMO123"
     assert captured["instruction"] == "Make it sharper"
-    assert captured["directive"] == {"tone": "Precise", "goal": "Retention"}
+    assert captured["directive"] == {"tone": "Precise", "goal": "Retention", "business_type": "B2B SaaS"}
     assert captured["report_id"] == "report-123"
     assert captured["device_auth"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]

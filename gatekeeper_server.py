@@ -55,6 +55,33 @@ CMO_PILLARS = ("Execution Efficiency", "Campaign Momentum", "Optimization Pathwa
 STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
 DIRECTIVE_TONES = ("Boardroom", "Startup", "Precise", "Persuasive")
 DIRECTIVE_GOALS = ("Budget Request", "Performance Fix", "Retention")
+DIRECTIVE_BUSINESS_TYPES = ("E-commerce", "B2B SaaS", "Local Service")
+NICHE_KNOWLEDGE_BASE = {
+    "E-commerce": {
+        "focus": "MER, LTV:CAC, Portfolio Efficiency, and Payback Periods",
+        "required_terms": ("MER", "LTV:CAC"),
+        "snippet": (
+            "E-commerce intelligence: interpret ROAS as one layer inside MER, connect deployed capital "
+            "to Portfolio Efficiency, frame profitable growth through LTV:CAC, and keep payback periods visible."
+        ),
+    },
+    "B2B SaaS": {
+        "focus": "Pipeline Velocity, Marketing-Sourced Pipeline %, and SQL Conversion",
+        "required_terms": ("Pipeline Velocity",),
+        "snippet": (
+            "B2B SaaS intelligence: translate campaign performance into Pipeline Velocity, marketing-sourced "
+            "pipeline contribution, SQL Conversion, and revenue-cycle momentum."
+        ),
+    },
+    "Local Service": {
+        "focus": "Map Pack Visibility, GMB Calls, Booked Jobs, and Review Velocity",
+        "required_terms": ("GMB Calls", "Booked Jobs"),
+        "snippet": (
+            "Local Service intelligence: connect campaign demand to Map Pack Visibility, GMB Calls, Booked Jobs, "
+            "and Review Velocity so operators see lead quality and field capacity impact."
+        ),
+    },
+}
 REFINEMENT_MODEL = "gpt-4o-mini"
 AUDIT_TRACE_MARKER = "AUDIT_TRACE_JSON"
 MATH_ANOMALY_THRESHOLD = 0.01
@@ -1203,15 +1230,69 @@ def _safe_channel_name(value, fallback="the strongest channel"):
     return text
 
 
+def _normalize_business_type(value):
+    normalized = re.sub(r"[\s_-]+", " ", str(value or "")).strip().lower()
+    aliases = {
+        "ecommerce": "E-commerce",
+        "e commerce": "E-commerce",
+        "e-commerce": "E-commerce",
+        "b2b": "B2B SaaS",
+        "b2b saas": "B2B SaaS",
+        "b2b software": "B2B SaaS",
+        "local": "Local Service",
+        "local service": "Local Service",
+        "local services": "Local Service",
+    }
+    return aliases.get(normalized, DIRECTIVE_BUSINESS_TYPES[0])
+
+
 def _sanitize_directive(directive):
     directive = directive if isinstance(directive, dict) else {}
     tone = str(directive.get("tone") or DIRECTIVE_TONES[0]).strip().title()
     goal = str(directive.get("goal") or DIRECTIVE_GOALS[0]).strip().title()
+    business_type = _normalize_business_type(directive.get("business_type"))
     if tone not in DIRECTIVE_TONES:
         tone = DIRECTIVE_TONES[0]
     if goal not in DIRECTIVE_GOALS:
         goal = DIRECTIVE_GOALS[0]
-    return {"tone": tone, "goal": goal}
+    return {"tone": tone, "goal": goal, "business_type": business_type}
+
+
+def _niche_knowledge(directive):
+    directive = _sanitize_directive(directive)
+    return NICHE_KNOWLEDGE_BASE[directive["business_type"]]
+
+
+def _niche_required_terms(directive):
+    return _niche_knowledge(directive)["required_terms"]
+
+
+def _has_required_niche_terms(text, directive):
+    lowered = str(text or "").lower()
+    return all(term.lower() in lowered for term in _niche_required_terms(directive))
+
+
+def _niche_guidance_line(directive):
+    directive = _sanitize_directive(directive)
+    knowledge = _niche_knowledge(directive)
+    terms = ", ".join(knowledge["required_terms"])
+    return (
+        f"Business Type: {directive['business_type']}. Specialized Harness: {knowledge['focus']}. "
+        f"Terminology Lock: the visible report must explicitly mention {terms}."
+    )
+
+
+def _build_elite_cmo_system_prompt(directive=None):
+    directive = _sanitize_directive(directive)
+    knowledge = _niche_knowledge(directive)
+    required_terms = ", ".join(knowledge["required_terms"])
+    return (
+        f"{ELITE_CMO_SYSTEM_PROMPT}\n\n"
+        f"Niche-Specific Intelligence for {directive['business_type']}:\n"
+        f"- {knowledge['snippet']}\n"
+        f"- Terminology Lock: every visible report must explicitly mention {required_terms}.\n"
+        "- Preserve the Rule of Three exactly; adapt the three pillars to the selected business type without adding extra sections."
+    )
 
 
 def _sanitized_stats_for_narrative(stats):
@@ -1716,6 +1797,7 @@ def _with_audit_metadata(result, stats, directive=None, audit_context=None, mode
 def _elite_cmo_narrative(stats, directive=None):
     sanitized = _sanitized_stats_for_narrative(stats)
     directive = _sanitize_directive(directive)
+    business_type = directive["business_type"]
     total_revenue = _safe_float(sanitized.get("total_revenue"))
     total_spend = _safe_float(sanitized.get("total_spend"))
     avg_roas = _safe_float(sanitized.get("blended_roas", sanitized.get("avg_roas")))
@@ -1740,6 +1822,22 @@ def _elite_cmo_narrative(stats, directive=None):
             for item in ordered[:3]
         )
 
+    if business_type == "Local Service":
+        executive_context = "For Local Service operators, the board lens is Map Pack Visibility, GMB Calls, Booked Jobs, and Review Velocity."
+        efficiency_context = "Efficiency should be judged by whether deployed capital converts into qualified Phone Calls and Booked Jobs, not traffic alone."
+        momentum_context = "GMB Calls are the near-term demand signal; Booked Jobs are the commercial proof that demand is converting into field revenue."
+        recommendation_context = "Track GMB Calls, Booked Jobs, and review velocity weekly so budget moves stay connected to local-market capacity."
+    elif business_type == "B2B SaaS":
+        executive_context = "For B2B SaaS, the board lens is Pipeline Velocity, marketing-sourced pipeline contribution, and SQL Conversion."
+        efficiency_context = "Efficiency should be judged by whether spend accelerates Pipeline Velocity and improves the quality of sales-ready demand."
+        momentum_context = "Campaign momentum should be measured by how quickly qualified interest advances into SQL Conversion and pipeline creation."
+        recommendation_context = "Build the weekly scorecard around Pipeline Velocity, marketing-sourced pipeline %, and SQL Conversion quality."
+    else:
+        executive_context = "For E-commerce, the board lens is MER, LTV:CAC, Portfolio Efficiency, and payback period discipline."
+        efficiency_context = "Efficiency should be judged through MER and LTV:CAC so channel ROAS does not hide portfolio-level margin pressure."
+        momentum_context = "Campaign momentum should protect Portfolio Efficiency while shortening payback periods on the strongest acquisition paths."
+        recommendation_context = "Build the weekly scorecard around MER, LTV:CAC, Portfolio Efficiency, and payback period movement."
+
     efficiency_posture = (
         "The account is converting capital with strong discipline"
         if avg_roas >= 3
@@ -1761,15 +1859,16 @@ def _elite_cmo_narrative(stats, directive=None):
         f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x blended ROAS profile "
         f"and {total_conversions:,} conversions. Momentum is anchored by {top_campaign}, giving leadership "
         f"a clear signal for where disciplined scaling should begin. The strategic directive is "
-        f"{directive['tone']} tone with a {directive['goal']} goal.\n\n"
+        f"{directive['tone']} tone with a {directive['goal']} goal for {business_type}. {executive_context}\n\n"
         "**Execution Efficiency**\n"
         f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x on a blended basis. "
         f"Channel efficiency is led by {best_channel}"
-        f"{f' ({channel_context})' if channel_context else ''}, creating a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
+        f"{f' ({channel_context})' if channel_context else ''}, creating a practical benchmark for budget decisions, channel prioritization, and margin protection. "
+        f"{efficiency_context}\n\n"
         "**Campaign Momentum**\n"
         f"{awareness_channel} is creating demand signals that {conversion_channel} can convert into secured return. "
         f"{top_campaign} remains the campaign-level proof point, so the strategic objective is to preserve signal quality "
-        "while connecting awareness, intent, and conversion into one coordinated attribution story.\n\n"
+        f"while connecting awareness, intent, and conversion into one coordinated attribution story. {momentum_context}\n\n"
         "**Optimization Pathways**\n"
         f"{optimization_path} {budget_reallocation} Treat {lowest_channel} as the first reallocation review point. "
         "The operating focus should be sharper allocation, cleaner conversion paths, "
@@ -1777,7 +1876,7 @@ def _elite_cmo_narrative(stats, directive=None):
         "**Strategic Recommendations**\n"
         f"1. Reallocate incremental deployed capital toward {best_channel} until marginal ROAS begins to normalize.\n"
         f"2. Use {awareness_channel} to keep demand creation active while {conversion_channel} captures the highest-return intent.\n"
-        "3. Establish a weekly executive scorecard around secured return, ROAS, conversions, and campaign momentum."
+        f"3. {recommendation_context}"
     )
 
 
@@ -1799,10 +1898,12 @@ def _audit_trace_contract():
 def _build_cmo_messages(stats, directive=None, audit_context=None):
     sanitized_stats = _sanitized_stats_for_narrative(stats)
     directive = _sanitize_directive(directive)
+    niche_guidance = _niche_guidance_line(directive)
     output_contract = (
         "Create a professional client-ready report using only these marketing statistics:\n"
         f"{json.dumps(sanitized_stats, sort_keys=True)}\n\n"
-        f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
+        f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}; business_type={directive['business_type']}.\n"
+        f"{niche_guidance}\n"
         f"Audit context with CSV row and column indexes:\n{_audit_context_prompt(audit_context)}\n\n"
         "If channel_metrics are present, treat this as a Strategic Attribution report. Explain the synergy between channels, "
         "such as awareness channels creating demand that search or high-intent channels convert. Recommend budget reallocation "
@@ -1823,7 +1924,7 @@ def _build_cmo_messages(stats, directive=None, audit_context=None):
         f"{_audit_trace_contract()}"
     )
     return [
-        {"role": "system", "content": ELITE_CMO_SYSTEM_PROMPT},
+        {"role": "system", "content": _build_elite_cmo_system_prompt(directive)},
         {"role": "user", "content": output_contract},
     ]
 
@@ -1831,6 +1932,7 @@ def _build_cmo_messages(stats, directive=None, audit_context=None):
 def _build_refinement_messages(stats, narrative, instruction, directive=None, audit_context=None):
     sanitized_stats = _sanitized_stats_for_narrative(stats)
     directive = _sanitize_directive(directive)
+    niche_guidance = _niche_guidance_line(directive)
     fact_lock = (
         "FACT-CHECK LOCK: CSV numbers are locked. Do not change, infer, round differently, "
         "invent, remove, or replace any numeric fact from the provided stats or narrative. "
@@ -1840,7 +1942,8 @@ def _build_refinement_messages(stats, narrative, instruction, directive=None, au
         {
             "role": "system",
             "content": (
-                "You are a Senior CMO refining a client-ready marketing report. "
+                f"{_build_elite_cmo_system_prompt(directive)}\n\n"
+                "You are refining a client-ready marketing report. "
                 "Keep the output professional, authoritative, and immediately boardroom-ready. "
                 f"{fact_lock} Use gpt-4o-mini behavior: concise, precise, and grounded."
             ),
@@ -1848,7 +1951,8 @@ def _build_refinement_messages(stats, narrative, instruction, directive=None, au
         {
             "role": "user",
             "content": (
-                f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
+                f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}; business_type={directive['business_type']}.\n"
+                f"{niche_guidance}\n"
                 f"Locked stats JSON: {json.dumps(sanitized_stats, sort_keys=True)}\n\n"
                 f"Audit context with CSV row and column indexes:\n{_audit_context_prompt(audit_context)}\n\n"
                 f"Original narrative:\n{str(narrative or '').strip()}\n\n"
@@ -2184,7 +2288,11 @@ def generate_narrative_result(stats, directive=None, audit_context=None):
         raw_narrative, token_usage = _chat_completion_content(body, purpose="narrative_generation")
         narrative, model_trace = _extract_hidden_audit_trace(raw_narrative)
         source = "openai"
-        if _contains_forbidden_narrative_terms(narrative) or not _has_required_cmo_sections(narrative):
+        if (
+            _contains_forbidden_narrative_terms(narrative)
+            or not _has_required_cmo_sections(narrative)
+            or not _has_required_niche_terms(narrative, directive)
+        ):
             log_event(logging.WARNING, "openai_generation_contract_fallback")
             narrative = _elite_cmo_narrative(stats, directive=directive)
             model_trace = None
@@ -2208,6 +2316,7 @@ def generate_narrative_result(stats, directive=None, audit_context=None):
                     corrected_truth["ok"]
                     and not _contains_forbidden_narrative_terms(corrected_narrative)
                     and _has_required_cmo_sections(corrected_narrative)
+                    and _has_required_niche_terms(corrected_narrative, directive)
                 ):
                     narrative = corrected_narrative
                     model_trace = corrected_trace
@@ -2288,7 +2397,11 @@ def generate_refinement_result(stats, narrative, instruction, directive=None, au
         refined, model_trace = _extract_hidden_audit_trace(raw_refined)
         source = "openai_refinement"
         truth_report = verify_truth_locked_numbers(refined, stats, audit_context)
-        if _contains_forbidden_narrative_terms(refined) or not truth_report["ok"]:
+        if (
+            _contains_forbidden_narrative_terms(refined)
+            or not truth_report["ok"]
+            or not _has_required_niche_terms(refined, directive)
+        ):
             log_event(
                 logging.WARNING,
                 "openai_refinement_fact_lock_corrective_retry",
@@ -2301,7 +2414,11 @@ def generate_refinement_result(stats, narrative, instruction, directive=None, au
             )
             corrected_refined, corrected_trace = _extract_hidden_audit_trace(corrected_raw)
             corrected_truth = verify_truth_locked_numbers(corrected_refined, stats, audit_context)
-            if corrected_truth["ok"] and not _contains_forbidden_narrative_terms(corrected_refined):
+            if (
+                corrected_truth["ok"]
+                and not _contains_forbidden_narrative_terms(corrected_refined)
+                and _has_required_niche_terms(corrected_refined, directive)
+            ):
                 refined = corrected_refined
                 model_trace = corrected_trace
                 source = "openai_refinement_corrected"
