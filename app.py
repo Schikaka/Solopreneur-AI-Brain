@@ -4,6 +4,7 @@ from hashlib import sha256
 from pathlib import Path
 from secrets import token_urlsafe
 
+import requests
 from flask import Flask, g, jsonify, render_template, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
@@ -13,6 +14,10 @@ from narrative_logic import analyze_data
 BASE_DIR = Path(__file__).parent
 DEFAULT_SAMPLE_PATH = BASE_DIR / "dummy_marketing_data.csv"
 ALLOWED_EXTENSIONS = {".csv"}
+STABILITY_NOTICE = (
+    "Our AI systems are currently optimizing resources. Your report has been prioritized. "
+    "Please wait 30 seconds and retry."
+)
 
 
 def _env_int(name, default):
@@ -74,7 +79,7 @@ def create_app(test_config=None):
 
     @app.errorhandler(RequestEntityTooLarge)
     def handle_large_upload(error):
-        return jsonify({"error": "CSV upload is too large."}), 413
+        return jsonify({"error": "CSV upload is too large.", "stability_notice": STABILITY_NOTICE}), 413
 
     @app.errorhandler(404)
     def handle_not_found(error):
@@ -83,11 +88,36 @@ def create_app(test_config=None):
     @app.errorhandler(500)
     def handle_server_error(error):
         app.logger.exception("Unhandled server error")
-        return jsonify({"error": "Unexpected server error."}), 500
+        return jsonify({"error": "Unexpected server error.", "stability_notice": STABILITY_NOTICE}), 500
 
     @app.get("/healthz")
     def health_check():
         return jsonify({"status": "ok"})
+
+    @app.get("/api/system-status")
+    def system_status():
+        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+        status_payload = {
+            "status": "ready",
+            "app": "ok",
+            "gatekeeper": "ok",
+            "message": "System Ready",
+        }
+
+        try:
+            gatekeeper_response = requests.get(f"{gatekeeper_url}/healthz", timeout=1.5)
+            gatekeeper_response.raise_for_status()
+        except Exception:
+            status_payload.update(
+                {
+                    "status": "degraded",
+                    "gatekeeper": "degraded",
+                    "message": "System Degraded",
+                    "stability_notice": STABILITY_NOTICE,
+                }
+            )
+
+        return jsonify(status_payload)
 
     @app.route("/")
     def index():

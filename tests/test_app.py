@@ -59,6 +59,47 @@ def test_index_has_nonce_csp(client):
     assert b"Past Reports" in response.data
     assert b"indexedDB.open" in response.data
     assert b"Privacy & Security" in response.data
+    assert b"System Checking" in response.data
+    assert b"/api/system-status" in response.data
+    assert b"renderReportSkeleton" in response.data
+    assert b"Elite Stability Notice" in response.data
+
+
+def test_system_status_ready(client, monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+    def get(url, timeout):
+        assert url == "http://gatekeeper.test/healthz"
+        assert timeout == 1.5
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.get", get)
+
+    response = client.get("/api/system-status")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "ready"
+    assert payload["message"] == "System Ready"
+    assert payload["gatekeeper"] == "ok"
+
+
+def test_system_status_degraded_when_gatekeeper_is_unavailable(client, monkeypatch):
+    def get(url, timeout):
+        raise TimeoutError("offline")
+
+    monkeypatch.setattr("app.requests.get", get)
+
+    response = client.get("/api/system-status")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "degraded"
+    assert payload["message"] == "System Degraded"
+    assert "optimizing resources" in payload["stability_notice"]
 
 
 def test_app_has_no_upload_dir_config(client):
