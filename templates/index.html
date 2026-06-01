@@ -42,6 +42,15 @@
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       }
 
+      body.app-locked {
+        overflow: hidden;
+      }
+
+      body.app-locked .shell,
+      body.app-locked .privacy-footer {
+        visibility: hidden;
+      }
+
       button,
       input,
       select {
@@ -1023,6 +1032,95 @@
         line-height: 1;
       }
 
+      .license-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 100;
+        display: grid;
+        place-items: center;
+        padding: 22px;
+        background: #ffffff;
+      }
+
+      .license-splash[hidden] {
+        display: none;
+      }
+
+      .license-card {
+        width: min(420px, 100%);
+        padding: 26px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+      }
+
+      .license-card .mark {
+        margin-bottom: 18px;
+      }
+
+      .license-card h1 {
+        margin: 0;
+        color: var(--text);
+        font-size: 28px;
+        line-height: 1.08;
+      }
+
+      .license-form {
+        display: grid;
+        gap: 12px;
+        margin-top: 20px;
+      }
+
+      .license-form label {
+        color: var(--muted);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .license-form input {
+        width: 100%;
+        min-height: 44px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+        color: var(--text);
+        font-weight: 750;
+      }
+
+      .license-status {
+        min-height: 20px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .license-status.error {
+        color: #b42318;
+        font-weight: 750;
+      }
+
+      .update-toast {
+        position: fixed;
+        top: 18px;
+        right: 18px;
+        z-index: 90;
+        max-width: min(360px, calc(100% - 36px));
+        padding: 12px 14px;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        box-shadow: var(--shadow);
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .update-toast[hidden] {
+        display: none;
+      }
+
       .drawer-backdrop {
         position: fixed;
         inset: 0;
@@ -1257,8 +1355,23 @@
       }
     </style>
   </head>
-  <body>
-    <main class="shell">
+  <body class="app-locked">
+    <section class="license-splash" id="license-splash" role="dialog" aria-modal="true" aria-labelledby="license-title">
+      <div class="license-card">
+        <div class="mark" aria-hidden="true">N</div>
+        <h1 id="license-title">NarrativeAI</h1>
+        <form class="license-form" id="license-form">
+          <label for="startup-license-key">License Key</label>
+          <input id="startup-license-key" type="password" autocomplete="off" spellcheck="false" aria-label="License key">
+          <button class="button" id="startup-license-button" type="submit">Unlock</button>
+          <div class="license-status" id="license-status" role="status" aria-live="polite"></div>
+        </form>
+      </div>
+    </section>
+
+    <div class="update-toast" id="update-toast" role="status" aria-live="polite" hidden>A premium update is available.</div>
+
+    <main class="shell" id="app-shell">
       <header class="topbar">
         <div class="brand-row">
           <button class="mobile-menu-button" id="mobile-menu-button" type="button" aria-label="Open report workspace" aria-controls="builder-drawer" aria-expanded="false">
@@ -1426,6 +1539,12 @@
     <script nonce="{{ csp_nonce }}" src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script nonce="{{ csp_nonce }}">
       const report = document.querySelector("#report");
+      const appVersion = {{ app_version|tojson }};
+      const licenseSplash = document.querySelector("#license-splash");
+      const startupLicenseForm = document.querySelector("#license-form");
+      const startupLicenseInput = document.querySelector("#startup-license-key");
+      const licenseStatus = document.querySelector("#license-status");
+      const updateToast = document.querySelector("#update-toast");
       const form = document.querySelector("#upload-form");
       const csvFileInput = document.querySelector("#csv-file");
       const analyzeButton = document.querySelector("#analyze-button");
@@ -1468,6 +1587,7 @@
       let currentReportDirective = { tone: "Boardroom", goal: "Budget Request" };
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
       let historyDbPromise = null;
+      let dashboardStarted = false;
 
       const money = (value) => `$${Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
       const reportDate = () => new Date().toLocaleDateString(undefined, {
@@ -1684,6 +1804,45 @@
 
       function getLicenseKey() {
         return (localStorage.getItem(licenseStorageKey) || "").trim();
+      }
+
+      function showLicenseSplash(message = "") {
+        document.body.classList.add("app-locked");
+        licenseSplash.hidden = false;
+        licenseStatus.className = message ? "license-status error" : "license-status";
+        licenseStatus.textContent = message;
+        window.setTimeout(() => startupLicenseInput.focus(), 20);
+      }
+
+      function hideLicenseSplash() {
+        licenseSplash.hidden = true;
+        document.body.classList.remove("app-locked");
+      }
+
+      function startDashboard() {
+        hideLicenseSplash();
+        if (dashboardStarted) {
+          return;
+        }
+        dashboardStarted = true;
+        loadSample();
+      }
+
+      async function checkForUpdates() {
+        try {
+          const { response, data } = await fetchJsonWithTimeout("/api/check-updates", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ current_version: appVersion }),
+            timeoutMs: 2500
+          });
+          if (response.ok && data.update_available) {
+            updateToast.textContent = data.message || "A premium update is available.";
+            updateToast.hidden = false;
+          }
+        } catch (error) {
+          updateToast.hidden = true;
+        }
       }
 
       function readSampleReportCache() {
@@ -2317,6 +2476,11 @@
       }
 
       async function loadSample(options = {}) {
+        if (!getLicenseKey()) {
+          showLicenseSplash();
+          return;
+        }
+
         const forceRefresh = options.forceRefresh || false;
         const saveToVault = options.saveToVault || false;
         if (!forceRefresh && renderCachedSampleReport()) {
@@ -2327,7 +2491,7 @@
         renderReportSkeleton("Loading sample report...");
         setBusy(true, "Loading sample report...");
         try {
-          const licenseParam = encodeURIComponent(getLicenseKey() || "DEMO123");
+          const licenseParam = encodeURIComponent(getLicenseKey());
           const { response, data } = await fetchJsonWithTimeout(`/api/sample?license_key=${licenseParam}`);
           if (!response.ok) {
             const error = new Error(data.error || stabilityNotice);
@@ -2364,7 +2528,7 @@
 
         const licenseKey = getLicenseKey();
         if (!licenseKey) {
-          errorBox.textContent = "Open Admin to finish workspace access before analyzing CSVs.";
+          showLicenseSplash("Enter your license key to continue.");
           return;
         }
 
@@ -2423,6 +2587,10 @@
       });
 
       sampleButton.addEventListener("click", () => {
+        if (!getLicenseKey()) {
+          showLicenseSplash("Enter your license key to continue.");
+          return;
+        }
         closeDrawer({ focus: false });
         loadSample({ forceRefresh: true, saveToVault: true });
       });
@@ -2538,8 +2706,7 @@
 
         const licenseKey = getLicenseKey();
         if (!licenseKey) {
-          refinementStatus.className = "refinement-status";
-          refinementStatus.textContent = "Open Admin to finish workspace access before refining reports.";
+          showLicenseSplash("Enter your license key to continue.");
           return;
         }
 
@@ -2613,6 +2780,10 @@
 
         if (retryButton) {
           if (retryButton.dataset.retryAction === "sample") {
+            if (!getLicenseKey()) {
+              showLicenseSplash("Enter your license key to continue.");
+              return;
+            }
             loadSample({ forceRefresh: true });
             return;
           }
@@ -2657,11 +2828,35 @@
         }
       });
 
-      updateDirectivePanel();
-      syncDrawerMode();
-      refreshSystemStatus();
-      window.setInterval(refreshSystemStatus, heartbeatIntervalMs);
-      loadSample();
+      startupLicenseForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const licenseKey = startupLicenseInput.value.trim();
+        if (!licenseKey) {
+          showLicenseSplash("Enter your license key to continue.");
+          return;
+        }
+        localStorage.setItem(licenseStorageKey, licenseKey);
+        licenseStatus.className = "license-status";
+        licenseStatus.textContent = "";
+        startDashboard();
+      });
+
+      function initializeClient() {
+        updateDirectivePanel();
+        syncDrawerMode();
+        refreshSystemStatus();
+        checkForUpdates();
+        window.setInterval(refreshSystemStatus, heartbeatIntervalMs);
+
+        if (getLicenseKey()) {
+          startDashboard();
+          return;
+        }
+
+        showLicenseSplash();
+      }
+
+      initializeClient();
     </script>
   </body>
 </html>

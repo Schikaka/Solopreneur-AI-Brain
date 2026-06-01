@@ -55,6 +55,19 @@ The Gatekeeper also runs a semantic firewall, OpenAI circuit breaker, idempotent
 fallback cache, and JSON structured logs. Set `REDIS_URL` to persist fallback
 cache entries outside process memory.
 
+## Standalone Distribution
+
+Build a single-file desktop-style executable with PyInstaller:
+
+```bash
+venv/bin/python build_dist.py
+```
+
+The build runs PyInstaller in one-file, windowed mode and bundles `templates/`,
+`static/`, and the sample CSV into the binary. The client app performs a startup
+version handshake against Gatekeeper `/check-updates` and shows a gated license
+splash before the dashboard loads when no local license key is saved.
+
 ## Security Architecture
 
 NarrativeAI splits the local report builder from the Gatekeeper service so

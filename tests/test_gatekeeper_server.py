@@ -190,6 +190,20 @@ def test_gatekeeper_compliance_health_reports_security_controls():
     assert payload["ips_blacklist_count"] == 0
 
 
+def test_check_updates_route_reports_premium_update(monkeypatch):
+    monkeypatch.setenv("LATEST_APP_VERSION", "1.1.0")
+    client = create_app().test_client()
+
+    response = client.post("/check-updates", json={"current_version": "1.0.0"})
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["ok"] is True
+    assert payload["latest_version"] == "1.1.0"
+    assert payload["update_available"] is True
+    assert payload["message"] == "A premium update is available."
+
+
 def test_honeypot_blacklists_ip_and_blocks_followup(capsys):
     gatekeeper_server.HONEYPOT_BLACKLIST.clear()
     client = create_app().test_client()

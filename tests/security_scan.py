@@ -145,6 +145,16 @@ def scan_static_controls(base_dir):
             "required": ("/api/v1/debug_admin", "HONEYPOT_BLACKLIST", "logging.CRITICAL"),
         },
         {
+            "name": "Version update handshake",
+            "path": "gatekeeper_server.py",
+            "required": ("/check-updates", "is_newer_version", "update_available"),
+        },
+        {
+            "name": "Client update handshake proxy",
+            "path": "app.py",
+            "required": ("/api/check-updates", "current_version", "APP_VERSION"),
+        },
+        {
             "name": "Startup validation",
             "path": "gatekeeper_server.py",
             "required": ("run_startup_validation", "security_scan.py"),

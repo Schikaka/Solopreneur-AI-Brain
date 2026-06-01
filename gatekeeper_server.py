@@ -40,6 +40,7 @@ except ImportError:  # pragma: no cover - optional cache backend.
 load_dotenv()
 
 BASE_DIR = Path(__file__).parent
+APP_VERSION = "1.0.0"
 OPENAI_TIMEOUT_SECONDS = 5
 GATEKEEPER_LIMIT = "5 per minute"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
@@ -368,6 +369,28 @@ def _env_float(name, default):
         return float(os.getenv(name, default))
     except (TypeError, ValueError):
         return float(default)
+
+
+def _current_app_version():
+    return os.getenv("APP_VERSION", APP_VERSION)
+
+
+def _latest_app_version():
+    return os.getenv("LATEST_APP_VERSION", _current_app_version())
+
+
+def _version_parts(version):
+    parts = []
+    for part in str(version or "0").split("."):
+        match = re.match(r"^(\d+)", part.strip())
+        parts.append(int(match.group(1)) if match else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def is_newer_version(latest_version, current_version):
+    return _version_parts(latest_version) > _version_parts(current_version)
 
 
 def _rate_limit_count():
@@ -1659,6 +1682,22 @@ def create_app():
     @app.get("/healthz")
     def health_check():
         return jsonify({"status": "ok", "service": "gatekeeper"})
+
+    @app.post("/check-updates")
+    def check_updates():
+        payload = request.get_json(silent=True) or {}
+        current_version = str(payload.get("current_version") or "0.0.0").strip()
+        latest_version = _latest_app_version()
+        update_available = is_newer_version(latest_version, current_version)
+        return jsonify(
+            {
+                "ok": True,
+                "current_version": current_version,
+                "latest_version": latest_version,
+                "update_available": update_available,
+                "message": "A premium update is available." if update_available else "",
+            }
+        )
 
     @app.get("/admin/compliance-health")
     def admin_compliance_health():

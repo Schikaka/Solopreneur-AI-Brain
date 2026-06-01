@@ -2,6 +2,7 @@ from io import BytesIO
 
 import pytest
 
+import build_dist
 from app import create_app
 
 
@@ -71,6 +72,11 @@ def test_index_has_nonce_csp(client):
     assert b"System Checking" in response.data
     assert b'role="status" aria-label="System heartbeat status" aria-live="polite"' in response.data
     assert b"/api/system-status" in response.data
+    assert b"/api/check-updates" in response.data
+    assert b"appVersion" in response.data
+    assert b"license-splash" in response.data
+    assert b"startup-license-key" in response.data
+    assert b"A premium update is available." in response.data
     assert b"renderReportSkeleton" in response.data
     assert b"skeleton-stage-stats" in response.data
     assert b"skeleton-stage-chart" in response.data
@@ -164,8 +170,51 @@ def test_compliance_health_proxy(client, monkeypatch):
     assert payload["checks"]["sast_scan"]["status"] == "passed"
 
 
+def test_check_updates_proxy(client, monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "ok": True,
+                "current_version": "1.0.0",
+                "latest_version": "1.1.0",
+                "update_available": True,
+                "message": "A premium update is available.",
+            }
+
+    def post(url, json, timeout):
+        assert url == "http://gatekeeper.test/check-updates"
+        assert json == {"current_version": "1.0.0"}
+        assert timeout == 1.5
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.post", post)
+
+    response = client.post("/api/check-updates")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["update_available"] is True
+    assert payload["message"] == "A premium update is available."
+
+
 def test_app_has_no_upload_dir_config(client):
     assert "UPLOAD_DIR" not in client.application.config
+
+
+def test_build_dist_uses_windowed_pyinstaller_bundle():
+    command = build_dist.build_command()
+    joined = " ".join(str(part) for part in command)
+
+    assert "-m PyInstaller" in joined
+    assert "--onefile" in command
+    assert "--windowed" in command
+    assert "templates" in joined
+    assert "static" in joined
+    assert "dummy_marketing_data.csv" in joined
 
 
 def test_sample_report(client):

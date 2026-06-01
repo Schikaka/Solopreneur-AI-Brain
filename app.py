@@ -1,5 +1,6 @@
 import io
 import os
+import sys
 from hashlib import sha256
 from pathlib import Path
 from secrets import token_urlsafe
@@ -12,7 +13,15 @@ from narrative_logic import analyze_data, refine_report, sanitize_directive
 
 
 BASE_DIR = Path(__file__).parent
-DEFAULT_SAMPLE_PATH = BASE_DIR / "dummy_marketing_data.csv"
+APP_VERSION = os.getenv("APP_VERSION", "1.0.0")
+
+
+def resource_path(*parts):
+    base_dir = Path(getattr(sys, "_MEIPASS", BASE_DIR))
+    return base_dir.joinpath(*parts)
+
+
+DEFAULT_SAMPLE_PATH = resource_path("dummy_marketing_data.csv")
 ALLOWED_EXTENSIONS = {".csv"}
 STABILITY_NOTICE = (
     "Our AI systems are currently optimizing resources. Your report has been prioritized. "
@@ -28,7 +37,11 @@ def _env_int(name, default):
 
 
 def create_app(test_config=None):
-    app = Flask(__name__)
+    app = Flask(
+        __name__,
+        template_folder=str(resource_path("templates")),
+        static_folder=str(resource_path("static")),
+    )
     app_env = os.getenv("APP_ENV", "development")
     max_upload_mb = _env_int("MAX_UPLOAD_MB", 8)
     secret_key = os.getenv("SECRET_KEY", "development-secret-change-me")
@@ -41,6 +54,7 @@ def create_app(test_config=None):
         MAX_CONTENT_LENGTH=max_upload_mb * 1024 * 1024,
         SAMPLE_CSV_PATH=Path(os.getenv("SAMPLE_CSV_PATH", DEFAULT_SAMPLE_PATH)),
         SECRET_KEY=secret_key,
+        APP_VERSION=os.getenv("APP_VERSION", APP_VERSION),
     )
 
     if test_config:
@@ -121,12 +135,30 @@ def create_app(test_config=None):
 
     @app.route("/")
     def index():
-        return render_template("index.html")
+        return render_template("index.html", app_version=app.config["APP_VERSION"])
 
     @app.route("/admin")
     def admin():
         gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
         return render_template("admin.html", gatekeeper_url=gatekeeper_url)
+
+    @app.post("/api/check-updates")
+    def check_updates():
+        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+        payload = {"current_version": app.config["APP_VERSION"]}
+        try:
+            response = requests.post(f"{gatekeeper_url}/check-updates", json=payload, timeout=1.5)
+            response.raise_for_status()
+            return jsonify(response.json())
+        except Exception:
+            return jsonify(
+                {
+                    "ok": False,
+                    "update_available": False,
+                    "current_version": app.config["APP_VERSION"],
+                    "error": "Update check is unavailable.",
+                }
+            ), 503
 
     @app.get("/api/compliance-health")
     def compliance_health():
