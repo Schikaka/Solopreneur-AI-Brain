@@ -1,3 +1,8 @@
+import hashlib
+import hmac
+import json
+import time
+
 import pytest
 
 import gatekeeper_server
@@ -122,6 +127,13 @@ def post_signed_refine(client, license_key, stats, narrative="Original narrative
     return client.post("/refine", json=payload, headers=signed_headers(payload))
 
 
+def stripe_signature_header(payload, secret="whsec_test", timestamp=None):
+    resolved_timestamp = int(timestamp or time.time())
+    signed_payload = str(resolved_timestamp).encode("utf-8") + b"." + payload
+    signature = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+    return f"t={resolved_timestamp},v1={signature}"
+
+
 def assert_boardroom_narrative(narrative):
     lowered = narrative.lower()
     assert "executive cmo brief" in lowered
@@ -218,6 +230,100 @@ def test_business_settings_store_stripe_payment_link():
     assert get_response.get_json()["settings"]["stripe_payment_link"] == payment_link
     assert invalid_response.status_code == 400
     assert "https" in invalid_response.get_json()["error"]
+
+
+def test_stripe_webhook_requires_valid_signature(monkeypatch):
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    client = create_app().test_client()
+    payload = json.dumps(
+        {
+            "id": "evt_checkout_completed",
+            "type": "checkout.session.completed",
+            "livemode": True,
+            "data": {
+                "object": {
+                    "payment_status": "paid",
+                    "payment_link": "plink_123",
+                    "customer_details": {"email": "buyer@example.com"},
+                }
+            },
+        },
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+    valid_response = client.post(
+        "/stripe/webhook",
+        data=payload,
+        content_type="application/json",
+        headers={"Stripe-Signature": stripe_signature_header(payload)},
+    )
+    duplicate_response = client.post(
+        "/stripe/webhook",
+        data=payload,
+        content_type="application/json",
+        headers={"Stripe-Signature": stripe_signature_header(payload)},
+    )
+    invalid_response = client.post(
+        "/stripe/webhook",
+        data=payload,
+        content_type="application/json",
+        headers={"Stripe-Signature": "t=123,v1=bad"},
+    )
+
+    assert valid_response.status_code == 200
+    assert valid_response.get_json()["received"] is True
+    assert valid_response.get_json()["duplicate"] is False
+    assert duplicate_response.status_code == 200
+    assert duplicate_response.get_json()["duplicate"] is True
+    assert invalid_response.status_code == 400
+
+
+def test_stripe_webhook_rejects_stale_signature(monkeypatch):
+    monkeypatch.setenv("STRIPE_WEBHOOK_SECRET", "whsec_test")
+    client = create_app().test_client()
+    payload = b'{"id":"evt_old","type":"checkout.session.completed","data":{"object":{}}}'
+    stale_timestamp = int(time.time()) - gatekeeper_server.STRIPE_WEBHOOK_TOLERANCE_SECONDS - 10
+
+    response = client.post(
+        "/stripe/webhook",
+        data=payload,
+        content_type="application/json",
+        headers={"Stripe-Signature": stripe_signature_header(payload, timestamp=stale_timestamp)},
+    )
+
+    assert response.status_code == 400
+
+
+def test_waf_header_check_allows_https_edge_and_rejects_bad_headers(monkeypatch):
+    monkeypatch.setenv("WAF_HEADER_CHECK", "1")
+    monkeypatch.setenv("ALLOWED_HOSTS", "gatekeeper.test")
+    client = create_app().test_client()
+
+    allowed = client.get(
+        "/",
+        headers={
+            "Host": "gatekeeper.test",
+            "X-Forwarded-Proto": "https",
+        },
+    )
+    bad_proto = client.get(
+        "/",
+        headers={
+            "Host": "gatekeeper.test",
+            "X-Forwarded-Proto": "http",
+        },
+    )
+    bad_host = client.get(
+        "/",
+        headers={
+            "Host": "attacker.test",
+            "X-Forwarded-Proto": "https",
+        },
+    )
+
+    assert allowed.status_code == 200
+    assert bad_proto.status_code == 400
+    assert bad_host.status_code == 400
 
 
 def test_honeypot_blacklists_ip_and_blocks_followup(capsys):

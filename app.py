@@ -23,6 +23,7 @@ def resource_path(*parts):
 
 DEFAULT_SAMPLE_PATH = resource_path("dummy_marketing_data.csv")
 ALLOWED_EXTENSIONS = {".csv"}
+DEFAULT_GATEKEEPER_URL = "http://localhost:5001"
 STABILITY_NOTICE = (
     "Our AI systems are currently optimizing resources. Your report has been prioritized. "
     "Please wait 30 seconds and retry."
@@ -37,7 +38,11 @@ def _env_int(name, default):
 
 
 def _gatekeeper_url():
-    return os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+    return (
+        os.getenv("GATEKEEPER_URL")
+        or os.getenv("GATEKEEPER_PUBLIC_URL")
+        or DEFAULT_GATEKEEPER_URL
+    ).rstrip("/")
 
 
 def _default_business_settings():
@@ -113,12 +118,12 @@ def create_app(test_config=None):
         return jsonify({"error": "Unexpected server error.", "stability_notice": STABILITY_NOTICE}), 500
 
     @app.get("/healthz")
+    @app.get("/HEALTHZ")
     def health_check():
         return jsonify({"status": "ok"})
 
     @app.get("/api/system-status")
     def system_status():
-        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
         status_payload = {
             "status": "ready",
             "app": "ok",
@@ -127,7 +132,7 @@ def create_app(test_config=None):
         }
 
         try:
-            gatekeeper_response = requests.get(f"{gatekeeper_url}/healthz", timeout=1.5)
+            gatekeeper_response = requests.get(f"{_gatekeeper_url()}/healthz", timeout=1.5)
             gatekeeper_response.raise_for_status()
         except Exception:
             status_payload.update(
@@ -349,4 +354,5 @@ app = create_app()
 if __name__ == "__main__":
     port = _env_int("PORT", 5000)
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
-    app.run(host=os.getenv("HOST", "127.0.0.1"), port=port, debug=debug)
+    default_host = "0.0.0.0" if os.getenv("APP_ENV") == "production" or os.getenv("RENDER") else "127.0.0.1"
+    app.run(host=os.getenv("HOST", default_host), port=port, debug=debug)

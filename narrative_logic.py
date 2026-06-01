@@ -26,6 +26,7 @@ NUMERIC_COLUMNS = ["Spend", "Clicks", "Impressions", "Conversions", "Revenue"]
 AI_TIMEOUT_SECONDS = 30
 DIRECTIVE_TONES = {"Boardroom", "Startup", "Precise", "Persuasive"}
 DIRECTIVE_GOALS = {"Budget Request", "Performance Fix", "Retention"}
+DEFAULT_GATEKEEPER_URL = "http://localhost:5001"
 
 
 def _missing_columns(df):
@@ -193,7 +194,11 @@ def read_marketing_csv(source):
 
 
 def _post_gatekeeper(path, payload):
-    gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+    gatekeeper_url = (
+        os.getenv("GATEKEEPER_URL")
+        or os.getenv("GATEKEEPER_PUBLIC_URL")
+        or DEFAULT_GATEKEEPER_URL
+    ).rstrip("/")
     return requests.post(
         f"{gatekeeper_url}{path}",
         json=payload,

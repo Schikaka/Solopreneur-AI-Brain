@@ -1,0 +1,47 @@
+services:
+  - type: web
+    name: narrativeai-gatekeeper
+    runtime: python
+    plan: free
+    branch: main
+    autoDeploy: true
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: gunicorn "gatekeeper_server:app" --bind 0.0.0.0:$PORT --workers 2 --timeout 120 --access-logfile -
+    healthCheckPath: /healthz
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: SQLCIPHER_REQUIRED
+        value: "1"
+      - key: WAF_HEADER_CHECK
+        value: "1"
+      - key: HOST
+        value: 0.0.0.0
+      - key: LICENSE_DB_PATH
+        value: database.db
+      - key: GATEKEEPER_REPORTS_PER_MINUTE
+        value: "5"
+      - key: OPENAI_TIMEOUT_SECONDS
+        value: "5"
+      - key: OPENAI_MAX_LATENCY_SECONDS
+        value: "5"
+      - key: SEMANTIC_FIREWALL_AI
+        value: "1"
+      - key: STRIPE_WEBHOOK_TOLERANCE_SECONDS
+        value: "300"
+      - key: DATABASE_ENCRYPTION_KEY
+        sync: false
+      - key: GATEKEEPER_JWT_SECRET
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: LICENSE_SEED_KEYS
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: EMERGENT_LLM_KEY
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: ALLOWED_HOSTS
+        sync: false

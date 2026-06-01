@@ -47,6 +47,7 @@ GATEKEEPER_LIMIT = "5 per minute"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 HONEY_POT_PATH = "/api/v1/debug_admin"
 HONEYPOT_BLACKLIST = set()
+STRIPE_WEBHOOK_TOLERANCE_SECONDS = 300
 CMO_PILLARS = ("Execution Efficiency", "Campaign Momentum", "Optimization Pathways")
 STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
 DIRECTIVE_TONES = ("Boardroom", "Startup", "Precise", "Persuasive")
@@ -372,6 +373,13 @@ def _env_float(name, default):
         return float(default)
 
 
+def _env_bool(name, default=False):
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def _current_app_version():
     return os.getenv("APP_VERSION", APP_VERSION)
 
@@ -633,6 +641,19 @@ class BusinessSettingsStore:
                 )
                 """
             )
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS stripe_webhook_events (
+                    event_id TEXT PRIMARY KEY,
+                    event_type TEXT NOT NULL,
+                    received_at TEXT NOT NULL,
+                    livemode INTEGER NOT NULL DEFAULT 0,
+                    customer_email TEXT,
+                    payment_status TEXT,
+                    payment_link TEXT
+                )
+                """
+            )
             connection.commit()
 
     def defaults(self):
@@ -686,6 +707,130 @@ class BusinessSettingsStore:
                 )
             connection.commit()
         return self.get_all()
+
+    def record_stripe_event(self, event):
+        self.ensure_initialized()
+        event_id = str(event.get("id") or "").strip()
+        event_type = str(event.get("type") or "").strip()
+        if not event_id or not event_type:
+            raise ValueError("Stripe webhook event is missing an id or type.")
+
+        data_object = (event.get("data") or {}).get("object") or {}
+        customer_details = data_object.get("customer_details") or {}
+        customer_email = str(customer_details.get("email") or data_object.get("customer_email") or "").strip()
+        payment_status = str(data_object.get("payment_status") or data_object.get("status") or "").strip()
+        payment_link = str(data_object.get("payment_link") or "").strip()
+        received_at = datetime.now(timezone.utc).isoformat()
+
+        with self.license_store.connect() as connection:
+            cursor = connection.execute(
+                """
+                INSERT OR IGNORE INTO stripe_webhook_events (
+                    event_id,
+                    event_type,
+                    received_at,
+                    livemode,
+                    customer_email,
+                    payment_status,
+                    payment_link
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    event_type,
+                    received_at,
+                    1 if event.get("livemode") else 0,
+                    customer_email,
+                    payment_status,
+                    payment_link,
+                ),
+            )
+            connection.commit()
+
+        return {
+            "event_id": event_id,
+            "event_type": event_type,
+            "duplicate": cursor.rowcount == 0,
+            "livemode": bool(event.get("livemode")),
+            "payment_status": payment_status,
+        }
+
+
+def _stripe_signature_parts(signature_header):
+    parts = {}
+    for item in str(signature_header or "").split(","):
+        if "=" not in item:
+            continue
+        key, value = item.split("=", 1)
+        parts.setdefault(key.strip(), []).append(value.strip())
+    return parts
+
+
+def verify_stripe_webhook_signature(payload, signature_header, webhook_secret, tolerance=None, now=None):
+    secret = str(webhook_secret or "").strip()
+    if not secret:
+        raise ValueError("Stripe webhook secret is not configured.")
+
+    parts = _stripe_signature_parts(signature_header)
+    try:
+        timestamp = int((parts.get("t") or [""])[0])
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Stripe webhook signature timestamp is invalid.") from exc
+
+    signatures = parts.get("v1") or []
+    if not signatures:
+        raise ValueError("Stripe webhook v1 signature is missing.")
+
+    tolerance_seconds = int(tolerance if tolerance is not None else _env_int("STRIPE_WEBHOOK_TOLERANCE_SECONDS", STRIPE_WEBHOOK_TOLERANCE_SECONDS))
+    current_time = int(now if now is not None else time.time())
+    if abs(current_time - timestamp) > tolerance_seconds:
+        raise ValueError("Stripe webhook signature timestamp is outside the allowed tolerance.")
+
+    signed_payload = str(timestamp).encode("utf-8") + b"." + bytes(payload)
+    expected_signature = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+    if not any(hmac.compare_digest(expected_signature, signature) for signature in signatures):
+        raise ValueError("Stripe webhook signature verification failed.")
+
+    return True
+
+
+def _normalize_host(value):
+    return str(value or "").split(",", 1)[0].strip().lower().split(":", 1)[0]
+
+
+def _allowed_hosts():
+    values = [
+        host.strip()
+        for host in os.getenv("ALLOWED_HOSTS", "").split(",")
+        if host.strip()
+    ]
+    render_hostname = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    if render_hostname:
+        values.append(render_hostname)
+    return {_normalize_host(host) for host in values if _normalize_host(host)}
+
+
+def _edge_header_check_enabled():
+    return _env_bool("WAF_HEADER_CHECK", default=os.getenv("APP_ENV") == "production")
+
+
+def validate_waf_headers():
+    if not _edge_header_check_enabled():
+        return None
+
+    allowed_hosts = _allowed_hosts()
+    requested_host = _normalize_host(request.headers.get("X-Forwarded-Host") or request.host)
+    if allowed_hosts and requested_host not in allowed_hosts:
+        log_event(logging.WARNING, "waf_host_header_rejected", host=requested_host)
+        return jsonify({"error": "Invalid edge host header."}), 400
+
+    forwarded_proto = str(request.headers.get("X-Forwarded-Proto") or "").split(",", 1)[0].strip().lower()
+    if request.path.lower() != "/healthz" and forwarded_proto != "https":
+        log_event(logging.WARNING, "waf_proto_header_rejected", proto=forwarded_proto or "missing")
+        return jsonify({"error": "Secure edge header required."}), 400
+
+    return None
 
 
 def _extract_client_ip():
@@ -1727,10 +1872,14 @@ def create_app():
         REQUEST_STARTED_AT.set(time.perf_counter())
         TOKEN_USAGE.set(DEFAULT_TOKEN_USAGE)
         tenant_id = "anonymous"
-        if request.is_json:
+        if request.path != "/stripe/webhook" and request.is_json:
             payload = request.get_json(silent=True) or {}
             tenant_id = _tenant_id(payload.get("license_key"))
         TENANT_ID.set(tenant_id)
+
+    @app.before_request
+    def enforce_waf_headers():
+        return validate_waf_headers()
 
     @app.before_request
     def enforce_honeypot_blacklist():
@@ -1769,6 +1918,7 @@ def create_app():
         return render_template_string(GATEKEEPER_PAGE)
 
     @app.get("/healthz")
+    @app.get("/HEALTHZ")
     def health_check():
         return jsonify({"status": "ok", "service": "gatekeeper"})
 
@@ -1787,6 +1937,41 @@ def create_app():
                 "message": "A premium update is available." if update_available else "",
             }
         )
+
+    @app.post("/stripe/webhook")
+    def stripe_webhook():
+        webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET", "").strip()
+        signature_header = request.headers.get("Stripe-Signature", "")
+        raw_payload = request.get_data(cache=False, as_text=False)
+
+        try:
+            verify_stripe_webhook_signature(raw_payload, signature_header, webhook_secret)
+        except ValueError as exc:
+            log_event(logging.WARNING, "stripe_webhook_signature_rejected", reason=str(exc))
+            return jsonify({"error": "Stripe webhook signature verification failed."}), 400
+
+        try:
+            event = json.loads(raw_payload.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            log_event(logging.WARNING, "stripe_webhook_invalid_json")
+            return jsonify({"error": "Stripe webhook payload is invalid."}), 400
+
+        try:
+            receipt = business_settings_store.record_stripe_event(event)
+        except ValueError as exc:
+            log_event(logging.WARNING, "stripe_webhook_invalid_event", reason=str(exc))
+            return jsonify({"error": "Stripe webhook event is invalid."}), 400
+
+        log_event(
+            logging.INFO,
+            "stripe_webhook_received",
+            event_id=receipt["event_id"],
+            event_type=receipt["event_type"],
+            duplicate=receipt["duplicate"],
+            livemode=receipt["livemode"],
+            payment_status=receipt["payment_status"],
+        )
+        return jsonify({"received": True, **receipt})
 
     @app.get("/admin/business-settings")
     def admin_business_settings():
@@ -2033,4 +2218,5 @@ app = create_app()
 if __name__ == "__main__":
     port = _env_int("PORT", 5001)
     debug = os.getenv("FLASK_DEBUG", "0") == "1"
-    app.run(host=os.getenv("HOST", "127.0.0.1"), port=port, debug=debug)
+    default_host = "0.0.0.0" if os.getenv("APP_ENV") == "production" or os.getenv("RENDER") else "127.0.0.1"
+    app.run(host=os.getenv("HOST", default_host), port=port, debug=debug)

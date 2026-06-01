@@ -16,6 +16,7 @@ from security_tokens import DEFAULT_JWT_SECRET
 ALLOWED_APP_ENVS = {"development", "testing", "production"}
 WEAK_SECRET_MARKERS = (
     "change-me",
+    "change_me",
     "development-only",
     "your_key_here",
 )
@@ -68,6 +69,7 @@ def scan_environment_isolation(env):
     required_secrets = {
         "DATABASE_ENCRYPTION_KEY": env.get("DATABASE_ENCRYPTION_KEY") or env.get("SQLCIPHER_KEY"),
         "GATEKEEPER_JWT_SECRET": env.get("GATEKEEPER_JWT_SECRET") or env.get("JWT_SECRET") or env.get("SECRET_KEY"),
+        "STRIPE_WEBHOOK_SECRET": env.get("STRIPE_WEBHOOK_SECRET"),
     }
     for name, value in required_secrets.items():
         if _is_weak_secret(value):
@@ -145,6 +147,16 @@ def scan_static_controls(base_dir):
             "required": ("/api/v1/debug_admin", "HONEYPOT_BLACKLIST", "logging.CRITICAL"),
         },
         {
+            "name": "WAF-friendly edge header check",
+            "path": "gatekeeper_server.py",
+            "required": ("X-Forwarded-Proto", "ALLOWED_HOSTS", "WAF_HEADER_CHECK", "validate_waf_headers"),
+        },
+        {
+            "name": "Stripe webhook signature verification",
+            "path": "gatekeeper_server.py",
+            "required": ("/stripe/webhook", "verify_stripe_webhook_signature", "Stripe-Signature", "STRIPE_WEBHOOK_SECRET"),
+        },
+        {
             "name": "Version update handshake",
             "path": "gatekeeper_server.py",
             "required": ("/check-updates", "is_newer_version", "update_available"),
@@ -153,6 +165,11 @@ def scan_static_controls(base_dir):
             "name": "Client update handshake proxy",
             "path": "app.py",
             "required": ("/api/check-updates", "current_version", "APP_VERSION"),
+        },
+        {
+            "name": "Production Gatekeeper URL sync",
+            "path": "narrative_logic.py",
+            "required": ("GATEKEEPER_PUBLIC_URL", "DEFAULT_GATEKEEPER_URL", "GATEKEEPER_URL"),
         },
         {
             "name": "Startup validation",
