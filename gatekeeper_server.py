@@ -1,3 +1,4 @@
+import base64
 import json
 import hmac
 import hashlib
@@ -896,6 +897,50 @@ def _verify_signed_payload(payload):
         raise TokenError("Payload hash header mismatch.")
 
     return verify_gatekeeper_jwt(token, payload)
+
+
+def _b64url_decode(value):
+    padding = "=" * (-len(str(value or "")) % 4)
+    return base64.urlsafe_b64decode(f"{value}{padding}".encode("ascii"))
+
+
+def _verify_device_session_token(session_token, license_key, hardware_id, leeway_seconds=30):
+    if not session_token:
+        raise TokenError("Missing secure session token.")
+
+    try:
+        encoded_header, encoded_payload, encoded_signature = str(session_token).split(".")
+        header = json.loads(_b64url_decode(encoded_header))
+        claims = json.loads(_b64url_decode(encoded_payload))
+    except Exception as exc:
+        raise TokenError("Malformed secure session token.") from exc
+
+    if header.get("alg") != "HS256":
+        raise TokenError("Unsupported secure session algorithm.")
+
+    signing_input = f"{encoded_header}.{encoded_payload}"
+    expected_signature = hmac.new(
+        str(license_key or "").strip().encode("utf-8"),
+        signing_input.encode("ascii"),
+        hashlib.sha256,
+    ).digest()
+    try:
+        supplied_signature = _b64url_decode(encoded_signature)
+    except Exception as exc:
+        raise TokenError("Malformed secure session signature.") from exc
+
+    if not hmac.compare_digest(expected_signature, supplied_signature):
+        raise TokenError("Invalid secure session signature.")
+
+    now = int(time.time())
+    if int(claims.get("exp", 0)) < now - int(leeway_seconds):
+        raise TokenError("Secure session token has expired.")
+    if int(claims.get("iat", 0)) > now + int(leeway_seconds):
+        raise TokenError("Secure session token is not active yet.")
+    if not hmac.compare_digest(str(claims.get("hardware_id", "")), str(hardware_id or "").strip()):
+        raise TokenError("Secure session hardware mismatch.")
+
+    return claims
 
 
 def _format_money(value):
@@ -2002,6 +2047,12 @@ def create_app():
             return jsonify({"error": "Compliance health access is restricted."}), 403
         return jsonify(compliance_health_payload(app.config.get("COMPLIANCE_HEALTH", {})))
 
+    @app.get("/admin/session-monitor")
+    def admin_session_monitor():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Session Monitor access is restricted."}), 403
+        return jsonify({"ok": True, **license_store.session_monitor()})
+
     @app.get("/admin/audit/<report_id>")
     def admin_audit(report_id):
         if not _admin_audit_allowed():
@@ -2050,6 +2101,9 @@ def create_app():
             signed_extra["directive"] = raw_directive
         if "audit_context" in payload:
             signed_extra["audit_context"] = audit_context
+        for key in ("hardware_id", "device_hmac", "session_token"):
+            if key in payload:
+                signed_extra[key] = str(payload.get(key, "")).strip()
         signed_payload = gatekeeper_payload(stats, license_key, signed_extra or None)
 
         try:
@@ -2058,10 +2112,29 @@ def create_app():
             log_event(logging.WARNING, "gatekeeper_auth_rejected", reason=str(exc))
             return jsonify({"error": str(exc)}), 401
 
-        if not license_store.is_valid(license_key):
-            log_event(logging.WARNING, "license_validation_failed")
-            return jsonify({"error": "Invalid license key."}), 403
-        log_event(logging.INFO, "license_validation_succeeded")
+        try:
+            _verify_device_session_token(payload.get("session_token", ""), license_key, payload.get("hardware_id", ""))
+        except TokenError as exc:
+            log_event(logging.WARNING, "secure_session_rejected", reason=str(exc))
+            return jsonify({"error": "Secure session could not be verified.", "identity": {"reason": str(exc)}}), 403
+
+        lock_result = license_store.validate_device_lock(
+            license_key,
+            payload.get("hardware_id", ""),
+            payload.get("device_hmac", ""),
+            ip=_extract_client_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+            path=request.path,
+        )
+        if not lock_result["ok"]:
+            log_event(logging.WARNING, "hardware_lock_rejected", reason=lock_result.get("reason"))
+            return jsonify({"error": lock_result["error"], "identity": {"reason": lock_result.get("reason")}}), 403
+        log_event(
+            logging.INFO,
+            "license_validation_succeeded",
+            hardware_status=lock_result.get("status"),
+            device_fingerprint=lock_result.get("device_fingerprint"),
+        )
 
         if not isinstance(stats, dict):
             return jsonify({"error": "Stats payload must be a JSON object."}), 400
@@ -2139,6 +2212,9 @@ def create_app():
         }
         if "parent_report_id" in payload:
             signed_extra["parent_report_id"] = parent_report_id
+        for key in ("hardware_id", "device_hmac", "session_token"):
+            if key in payload:
+                signed_extra[key] = str(payload.get(key, "")).strip()
         signed_payload = gatekeeper_payload(stats, license_key, signed_extra)
         TENANT_ID.set(_tenant_id(license_key))
 
@@ -2148,9 +2224,23 @@ def create_app():
             log_event(logging.WARNING, "gatekeeper_refine_auth_rejected", reason=str(exc))
             return jsonify({"error": str(exc)}), 401
 
-        if not license_store.is_valid(license_key):
-            log_event(logging.WARNING, "refine_license_validation_failed")
-            return jsonify({"error": "Invalid license key."}), 403
+        try:
+            _verify_device_session_token(payload.get("session_token", ""), license_key, payload.get("hardware_id", ""))
+        except TokenError as exc:
+            log_event(logging.WARNING, "refine_secure_session_rejected", reason=str(exc))
+            return jsonify({"error": "Secure session could not be verified.", "identity": {"reason": str(exc)}}), 403
+
+        lock_result = license_store.validate_device_lock(
+            license_key,
+            payload.get("hardware_id", ""),
+            payload.get("device_hmac", ""),
+            ip=_extract_client_ip(),
+            user_agent=request.headers.get("User-Agent", ""),
+            path=request.path,
+        )
+        if not lock_result["ok"]:
+            log_event(logging.WARNING, "refine_hardware_lock_rejected", reason=lock_result.get("reason"))
+            return jsonify({"error": lock_result["error"], "identity": {"reason": lock_result.get("reason")}}), 403
 
         if not isinstance(stats, dict):
             return jsonify({"error": "Stats payload must be a JSON object."}), 400

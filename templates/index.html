@@ -1599,6 +1599,9 @@
       const privacyModal = document.querySelector("#privacy-modal");
       const logoStorageKey = "narrativeai.agencyLogo";
       const licenseStorageKey = "narrativeai.licenseKey";
+      const deviceStorageKey = "narrativeai.deviceIdentity";
+      const secureSessionStorageKey = "narrativeai.secureSession";
+      const secureSessionTtlMs = 30 * 60 * 1000;
       const sampleReportCacheKey = "narrativeai.sampleReport";
       const sampleReportCacheTtlMs = 6 * 60 * 60 * 1000;
       const stabilityNotice = "Our AI systems are currently optimizing resources. Your report has been prioritized. Please wait 30 seconds and retry.";
@@ -1832,6 +1835,175 @@
 
       function getLicenseKey() {
         return (localStorage.getItem(licenseStorageKey) || "").trim();
+      }
+
+      function textToBytes(value) {
+        return new TextEncoder().encode(String(value || ""));
+      }
+
+      function bufferToHex(buffer) {
+        return Array.from(new Uint8Array(buffer))
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      function base64UrlFromString(value) {
+        const bytes = textToBytes(value);
+        let binary = "";
+        bytes.forEach((byte) => {
+          binary += String.fromCharCode(byte);
+        });
+        return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+
+      function base64UrlFromBytes(bytes) {
+        let binary = "";
+        new Uint8Array(bytes).forEach((byte) => {
+          binary += String.fromCharCode(byte);
+        });
+        return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+      }
+
+      function stableHashFallback(value) {
+        let hash = 2166136261;
+        const input = String(value || "");
+        for (let index = 0; index < input.length; index += 1) {
+          hash ^= input.charCodeAt(index);
+          hash = Math.imul(hash, 16777619);
+        }
+        return Array.from({ length: 8 })
+          .map((_, index) => ((hash >>> ((index % 4) * 8)) & 255).toString(16).padStart(2, "0"))
+          .join("");
+      }
+
+      async function sha256Hex(value) {
+        if (!window.crypto?.subtle?.digest) {
+          return stableHashFallback(value).repeat(8).slice(0, 64);
+        }
+        const digest = await window.crypto.subtle.digest("SHA-256", textToBytes(value));
+        return bufferToHex(digest);
+      }
+
+      async function hmacSha256Hex(secret, message) {
+        if (!window.crypto?.subtle?.importKey) {
+          return sha256Hex(`${secret}:${message}`);
+        }
+        const key = await window.crypto.subtle.importKey(
+          "raw",
+          textToBytes(secret),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+        const signature = await window.crypto.subtle.sign("HMAC", key, textToBytes(message));
+        return bufferToHex(signature);
+      }
+
+      async function hmacSha256Base64Url(secret, message) {
+        if (!window.crypto?.subtle?.importKey) {
+          return base64UrlFromString(await sha256Hex(`${secret}:${message}`));
+        }
+        const key = await window.crypto.subtle.importKey(
+          "raw",
+          textToBytes(secret),
+          { name: "HMAC", hash: "SHA-256" },
+          false,
+          ["sign"]
+        );
+        const signature = await window.crypto.subtle.sign("HMAC", key, textToBytes(message));
+        return base64UrlFromBytes(signature);
+      }
+
+      function browserEngine() {
+        const userAgent = navigator.userAgent || "";
+        if (/Firefox\//i.test(userAgent)) {
+          return "gecko";
+        }
+        if (/AppleWebKit/i.test(userAgent) && !/Chrome|Chromium|Edg\//i.test(userAgent)) {
+          return "webkit";
+        }
+        if (/Chrome|Chromium|Edg\//i.test(userAgent)) {
+          return "chromium";
+        }
+        return "unknown";
+      }
+
+      function deviceTraits() {
+        return {
+          cpu_cores: String(navigator.hardwareConcurrency || "unknown"),
+          screen_resolution: `${window.screen?.width || 0}x${window.screen?.height || 0}x${window.screen?.colorDepth || 0}`,
+          os: navigator.userAgentData?.platform || navigator.platform || "unknown",
+          browser_engine: browserEngine()
+        };
+      }
+
+      async function getHardwareId() {
+        const traits = deviceTraits();
+        const canonicalTraits = JSON.stringify(traits);
+        const hardwareId = await sha256Hex(canonicalTraits);
+        const cached = JSON.parse(localStorage.getItem(deviceStorageKey) || "null");
+        if (cached?.hardware_id !== hardwareId || cached?.fingerprint_source !== canonicalTraits) {
+          localStorage.setItem(
+            deviceStorageKey,
+            JSON.stringify({
+              hardware_id: hardwareId,
+              fingerprint_source: canonicalTraits,
+              refreshed_at: new Date().toISOString()
+            })
+          );
+        }
+        return hardwareId;
+      }
+
+      async function createSessionJwt(licenseKey, hardwareId) {
+        const now = Math.floor(Date.now() / 1000);
+        const header = base64UrlFromString(JSON.stringify({ alg: "HS256", typ: "JWT" }));
+        const payload = base64UrlFromString(JSON.stringify({
+          iat: now,
+          exp: now + Math.floor(secureSessionTtlMs / 1000),
+          hardware_id: hardwareId
+        }));
+        const signingInput = `${header}.${payload}`;
+        const signature = await hmacSha256Base64Url(licenseKey, signingInput);
+        return `${signingInput}.${signature}`;
+      }
+
+      async function renewSecureSession(force = false) {
+        const licenseKey = getLicenseKey();
+        if (!licenseKey) {
+          sessionStorage.removeItem(secureSessionStorageKey);
+          return null;
+        }
+
+        const hardwareId = await getHardwareId();
+        const existing = JSON.parse(sessionStorage.getItem(secureSessionStorageKey) || "null");
+        if (
+          !force &&
+          existing?.token &&
+          existing?.hardware_id === hardwareId &&
+          Number(existing.expires_at || 0) > Date.now() + 30000
+        ) {
+          return existing;
+        }
+
+        const session = {
+          token: await createSessionJwt(licenseKey, hardwareId),
+          hardware_id: hardwareId,
+          renewed_at: Date.now(),
+          expires_at: Date.now() + secureSessionTtlMs
+        };
+        sessionStorage.setItem(secureSessionStorageKey, JSON.stringify(session));
+        return session;
+      }
+
+      async function buildDeviceHeaders(licenseKey = getLicenseKey()) {
+        const hardwareId = await getHardwareId();
+        const session = await renewSecureSession(false);
+        return {
+          "X-Device-ID": hardwareId,
+          "X-Device-HMAC": await hmacSha256Hex(licenseKey, hardwareId),
+          "X-Session-Token": session?.token || ""
+        };
       }
 
       function applyStripePaymentLink(linkValue = "") {
@@ -2540,8 +2712,12 @@
         renderReportSkeleton("Loading sample report...");
         setBusy(true, "Loading sample report...");
         try {
-          const licenseParam = encodeURIComponent(getLicenseKey());
-          const { response, data } = await fetchJsonWithTimeout(`/api/sample?license_key=${licenseParam}`);
+          const licenseKey = getLicenseKey();
+          const licenseParam = encodeURIComponent(licenseKey);
+          const deviceHeaders = await buildDeviceHeaders(licenseKey);
+          const { response, data } = await fetchJsonWithTimeout(`/api/sample?license_key=${licenseParam}`, {
+            headers: deviceHeaders
+          });
           if (!response.ok) {
             const error = new Error(data.error || stabilityNotice);
             error.stabilityNotice = data.stability_notice || stabilityNotice;
@@ -2592,7 +2768,11 @@
           closeDrawer({ focus: false });
           renderReportSkeleton(`Generating ${file.name}...`);
           setBusy(true, `Generating ${file.name} with ${directiveLabel(directive)}...`);
-          const { response, data } = await fetchJsonWithTimeout("/api/analyze", { method: "POST", body });
+          const { response, data } = await fetchJsonWithTimeout("/api/analyze", {
+            method: "POST",
+            headers: await buildDeviceHeaders(licenseKey),
+            body
+          });
 
           if (!response.ok) {
             const error = new Error(data.error || stabilityNotice);
@@ -2771,9 +2951,10 @@
         renderNarrativeRefinementSkeleton("Refining narrative with Fact-Check Lock...");
 
         try {
+          const deviceHeaders = await buildDeviceHeaders(licenseKey);
           const { response, data } = await fetchJsonWithTimeout("/refine", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", ...deviceHeaders },
             body: JSON.stringify({
               license_key: licenseKey,
               stats: currentReportData.stats,
@@ -2877,7 +3058,7 @@
         }
       });
 
-      startupLicenseForm.addEventListener("submit", (event) => {
+      startupLicenseForm.addEventListener("submit", async (event) => {
         event.preventDefault();
         const licenseKey = startupLicenseInput.value.trim();
         if (!licenseKey) {
@@ -2887,18 +3068,25 @@
         localStorage.setItem(licenseStorageKey, licenseKey);
         licenseStatus.className = "license-status";
         licenseStatus.textContent = "";
+        await renewSecureSession(true);
         startDashboard();
       });
 
-      function initializeClient() {
+      async function initializeClient() {
         updateDirectivePanel();
         syncDrawerMode();
         refreshSystemStatus();
         loadBusinessSettings();
         checkForUpdates();
         window.setInterval(refreshSystemStatus, heartbeatIntervalMs);
+        window.setInterval(() => {
+          if (getLicenseKey()) {
+            renewSecureSession(true);
+          }
+        }, secureSessionTtlMs);
 
         if (getLicenseKey()) {
+          await renewSecureSession(true);
           startDashboard();
           return;
         }

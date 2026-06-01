@@ -167,6 +167,34 @@ def scan_static_controls(base_dir):
             "required": ("/api/check-updates", "current_version", "APP_VERSION"),
         },
         {
+            "name": "Client device fingerprinting",
+            "path": "templates/index.html",
+            "required": (
+                "cpu_cores",
+                "screen_resolution",
+                "browser_engine",
+                "crypto.subtle.digest",
+                "X-Device-ID",
+                "X-Device-HMAC",
+                "renewSecureSession",
+            ),
+        },
+        {
+            "name": "Hardware license lock",
+            "path": "license_store.py",
+            "required": ("locked_device_id", "auth_alerts", "validate_device_lock", "device_hmac"),
+        },
+        {
+            "name": "Secure session verifier",
+            "path": "gatekeeper_server.py",
+            "required": ("_verify_device_session_token", "secure_session_rejected", "session_token"),
+        },
+        {
+            "name": "Admin session monitor",
+            "path": "templates/admin.html",
+            "required": ("Session Monitor", "refreshSessionMonitor", "/api/session-monitor"),
+        },
+        {
             "name": "Production Gatekeeper URL sync",
             "path": "narrative_logic.py",
             "required": ("GATEKEEPER_PUBLIC_URL", "DEFAULT_GATEKEEPER_URL", "GATEKEEPER_URL"),

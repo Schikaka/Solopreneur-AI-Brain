@@ -7,6 +7,13 @@ import build_dist
 from app import create_app
 
 
+DEVICE_HEADERS = {
+    "X-Device-ID": "a" * 64,
+    "X-Device-HMAC": "b" * 64,
+    "X-Session-Token": "session.jwt",
+}
+
+
 @pytest.fixture
 def client():
     app = create_app({"TESTING": True})
@@ -29,6 +36,10 @@ def fake_gatekeeper(monkeypatch):
         assert json["license_key"]
         assert headers["Authorization"].startswith("Bearer ")
         assert len(headers["X-Payload-SHA256"]) == 64
+        if json.get("hardware_id"):
+            assert headers["X-Device-ID"] == json["hardware_id"]
+            assert headers["X-Device-HMAC"] == json["device_hmac"]
+            assert headers["X-Session-Token"] == json["session_token"]
         return Response()
 
     monkeypatch.setattr("narrative_logic.requests.post", post)
@@ -58,6 +69,10 @@ def test_admin_page(client):
     assert b"/api/compliance-health" in response.data
     assert b"narrativeai.localHistoryVault" in response.data
     assert b"Math anomaly detected" in response.data
+    assert b"Session Monitor" in response.data
+    assert b"Active Devices" in response.data
+    assert b"Flagged Keys" in response.data
+    assert b"/api/session-monitor" in response.data
 
 
 def test_index_has_nonce_csp(client):
@@ -106,6 +121,13 @@ def test_index_has_nonce_csp(client):
     assert b'aria-label="Copy narrative to clipboard"' in response.data
     assert b":focus-visible" in response.data
     assert b'aria-live="polite"' in response.data
+    assert b"cpu_cores" in response.data
+    assert b"screen_resolution" in response.data
+    assert b"browser_engine" in response.data
+    assert b"crypto.subtle.digest" in response.data
+    assert b"X-Device-ID" in response.data
+    assert b"X-Device-HMAC" in response.data
+    assert b"renewSecureSession" in response.data
 
 
 def test_system_status_ready(client, monkeypatch):
@@ -175,6 +197,36 @@ def test_compliance_health_proxy(client, monkeypatch):
     assert response.status_code == 200
     assert payload["ok"] is True
     assert payload["checks"]["sast_scan"]["status"] == "passed"
+
+
+def test_session_monitor_proxy(client, monkeypatch):
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "ok": True,
+                "active_devices": [{"device_fingerprint": "device-abc"}],
+                "alerts": [{"alert_type": "hardware_lock_violation"}],
+                "active_device_count": 1,
+                "alert_count": 1,
+            }
+
+    def get(url, timeout):
+        assert url == "http://gatekeeper.test/admin/session-monitor"
+        assert timeout == 1.5
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.get", get)
+
+    response = client.get("/api/session-monitor")
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["active_device_count"] == 1
+    assert payload["alerts"][0]["alert_type"] == "hardware_lock_violation"
 
 
 def test_business_settings_proxy_get_and_post(client, monkeypatch):
@@ -291,19 +343,20 @@ def test_sample_report(client):
 def test_sample_report_is_cached(client, monkeypatch):
     calls = 0
 
-    def fake_analyze_data(path, license_key):
+    def fake_analyze_data(path, license_key, device_auth=None):
         nonlocal calls
         calls += 1
-        return {"report": "cached sample", "license_key_seen": license_key}
+        return {"report": "cached sample", "license_key_seen": license_key, "device_auth_seen": device_auth}
 
     monkeypatch.setattr("app.analyze_data", fake_analyze_data)
 
-    first_response = client.get("/api/sample?license_key=DEMO123")
-    second_response = client.get("/api/sample?license_key=DEMO123")
+    first_response = client.get("/api/sample?license_key=DEMO123", headers=DEVICE_HEADERS)
+    second_response = client.get("/api/sample?license_key=DEMO123", headers=DEVICE_HEADERS)
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
     assert second_response.get_json()["report"] == "cached sample"
+    assert second_response.get_json()["device_auth_seen"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]
     assert calls == 1
 
 
@@ -332,11 +385,12 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
     )
     captured = {}
 
-    def fake_analyze_data(source, license_key, directive=None):
+    def fake_analyze_data(source, license_key, directive=None, device_auth=None):
         captured["source"] = source
         captured["payload"] = source.getvalue()
         captured["license_key"] = license_key
         captured["directive"] = directive
+        captured["device_auth"] = device_auth
         return {
             "stats": {"total_revenue": 300, "total_spend": 100, "avg_roas": 3, "total_conversions": 5},
             "insights": [],
@@ -356,6 +410,7 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
             "goal": "Budget Request",
         },
         content_type="multipart/form-data",
+        headers=DEVICE_HEADERS,
     )
 
     assert response.status_code == 200
@@ -363,6 +418,7 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
     assert captured["payload"] == csv_bytes
     assert captured["license_key"] == "DEMO123"
     assert captured["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
+    assert captured["device_auth"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]
 
 
 def test_upload_valid_csv(client):
@@ -387,13 +443,14 @@ def test_upload_valid_csv(client):
 def test_refine_route_calls_refinement_backend(client, monkeypatch):
     captured = {}
 
-    def fake_refine_report(stats, narrative, instruction, license_key, directive=None, report_id=None):
+    def fake_refine_report(stats, narrative, instruction, license_key, directive=None, report_id=None, device_auth=None):
         captured["stats"] = stats
         captured["narrative"] = narrative
         captured["instruction"] = instruction
         captured["license_key"] = license_key
         captured["directive"] = directive
         captured["report_id"] = report_id
+        captured["device_auth"] = device_auth
         return {
             "narrative": "Refined narrative",
             "model": "gpt-4o-mini",
@@ -412,6 +469,7 @@ def test_refine_route_calls_refinement_backend(client, monkeypatch):
             "directive": {"tone": "Precise", "goal": "Retention"},
             "report_id": "report-123",
         },
+        headers=DEVICE_HEADERS,
     )
     payload = response.get_json()
 
@@ -422,3 +480,4 @@ def test_refine_route_calls_refinement_backend(client, monkeypatch):
     assert captured["instruction"] == "Make it sharper"
     assert captured["directive"] == {"tone": "Precise", "goal": "Retention"}
     assert captured["report_id"] == "report-123"
+    assert captured["device_auth"]["hardware_id"] == DEVICE_HEADERS["X-Device-ID"]

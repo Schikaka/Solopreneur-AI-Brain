@@ -49,6 +49,14 @@ def _default_business_settings():
     return {"stripe_payment_link": os.getenv("STRIPE_PAYMENT_LINK", "").strip()}
 
 
+def _device_auth_from_request():
+    return {
+        "hardware_id": request.headers.get("X-Device-ID", "").strip(),
+        "device_hmac": request.headers.get("X-Device-HMAC", "").strip(),
+        "session_token": request.headers.get("X-Session-Token", "").strip(),
+    }
+
+
 def create_app(test_config=None):
     app = Flask(
         __name__,
@@ -246,9 +254,29 @@ def create_app(test_config=None):
                 }
             ), 503
 
+    @app.get("/api/session-monitor")
+    def session_monitor():
+        try:
+            response = requests.get(f"{_gatekeeper_url()}/admin/session-monitor", timeout=1.5)
+            response.raise_for_status()
+            return jsonify(response.json())
+        except Exception:
+            return jsonify(
+                {
+                    "ok": False,
+                    "active_devices": [],
+                    "alerts": [],
+                    "active_device_count": 0,
+                    "alert_count": 0,
+                    "error": "Session Monitor is unavailable.",
+                    "stability_notice": STABILITY_NOTICE,
+                }
+            ), 503
+
     @app.get("/api/sample")
     def sample_report():
         license_key = request.args.get("license_key") or os.getenv("DEMO_LICENSE_KEY", "DEMO123")
+        device_auth = _device_auth_from_request()
         sample_path = Path(app.config["SAMPLE_CSV_PATH"])
         try:
             sample_fingerprint = sample_path.stat().st_mtime_ns
@@ -258,12 +286,13 @@ def create_app(test_config=None):
             resolved_sample_path = str(sample_path)
 
         license_hash = sha256(str(license_key).encode("utf-8")).hexdigest()
-        cache_key = (resolved_sample_path, sample_fingerprint, license_hash)
+        device_hash = sha256(str(device_auth.get("hardware_id", "")).encode("utf-8")).hexdigest()
+        cache_key = (resolved_sample_path, sample_fingerprint, license_hash, device_hash)
         if cache_key in sample_report_cache:
             return jsonify(sample_report_cache[cache_key])
 
         try:
-            report = analyze_data(sample_path, license_key=license_key)
+            report = analyze_data(sample_path, license_key=license_key, device_auth=device_auth)
             if len(sample_report_cache) > 16:
                 sample_report_cache.clear()
             sample_report_cache[cache_key] = report
@@ -288,6 +317,7 @@ def create_app(test_config=None):
         license_key = request.form.get("license_key", "").strip()
         if not license_key:
             return jsonify({"error": "Enter a valid license key to generate reports."}), 403
+        device_auth = _device_auth_from_request()
         directive = sanitize_directive(
             {
                 "tone": request.form.get("tone", ""),
@@ -299,7 +329,14 @@ def create_app(test_config=None):
             csv_bytes = uploaded_file.read()
             if not csv_bytes:
                 return jsonify({"error": "CSV file is empty."}), 400
-            return jsonify(analyze_data(io.BytesIO(csv_bytes), license_key=license_key, directive=directive))
+            return jsonify(
+                analyze_data(
+                    io.BytesIO(csv_bytes),
+                    license_key=license_key,
+                    directive=directive,
+                    device_auth=device_auth,
+                )
+            )
         except PermissionError as exc:
             return jsonify({"error": str(exc)}), 403
         except Exception as exc:
@@ -318,6 +355,7 @@ def create_app(test_config=None):
         instruction = str(payload.get("instruction", "")).strip()
         directive = sanitize_directive(payload.get("directive"))
         report_id = str(payload.get("report_id", "")).strip()
+        device_auth = _device_auth_from_request()
 
         if not license_key:
             return jsonify({"error": "Enter a valid license key to refine reports."}), 403
@@ -337,6 +375,7 @@ def create_app(test_config=None):
                     license_key,
                     directive=directive,
                     report_id=report_id or None,
+                    device_auth=device_auth,
                 )
             )
         except PermissionError as exc:

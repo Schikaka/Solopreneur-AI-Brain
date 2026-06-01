@@ -59,10 +59,21 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
     monkeypatch.setattr("narrative_logic.requests.post", post)
 
-    result = analyze_data("dummy_marketing_data.csv", license_key="DEMO123")
+    result = analyze_data(
+        "dummy_marketing_data.csv",
+        license_key="DEMO123",
+        device_auth={
+            "hardware_id": "a" * 64,
+            "device_hmac": "b" * 64,
+            "session_token": "session.jwt",
+        },
+    )
 
     assert captured["url"] == "http://gatekeeper.test/verify-and-generate"
     assert captured["payload"]["license_key"] == "DEMO123"
+    assert captured["payload"]["hardware_id"] == "a" * 64
+    assert captured["payload"]["device_hmac"] == "b" * 64
+    assert captured["payload"]["session_token"] == "session.jwt"
     assert captured["payload"]["stats"]["total_revenue"] == 13650.0
     assert captured["payload"]["directive"] == {"tone": "Boardroom", "goal": "Budget Request"}
     assert captured["payload"]["audit_context"]["columns"]["Revenue"] == 7
@@ -70,6 +81,9 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert captured["payload"]["audit_context"]["aggregate_map"]["total_revenue"]["column"] == "Revenue"
     assert captured["headers"]["Authorization"].startswith("Bearer ")
     assert len(captured["headers"]["X-Payload-SHA256"]) == 64
+    assert captured["headers"]["X-Device-ID"] == "a" * 64
+    assert captured["headers"]["X-Device-HMAC"] == "b" * 64
+    assert captured["headers"]["X-Session-Token"] == "session.jwt"
     assert result["narrative"] == "Narrative from gatekeeper"
     assert result["report_id"] == "report-abc"
     assert result["audit"]["reasoning_trace_available"] is True
@@ -133,16 +147,27 @@ def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
         "Make it more persuasive",
         "DEMO123",
         directive={"tone": "Persuasive", "goal": "Budget Request"},
+        device_auth={
+            "hardware_id": "a" * 64,
+            "device_hmac": "b" * 64,
+            "session_token": "session.jwt",
+        },
     )
 
     assert captured["url"] == "http://gatekeeper.test/refine"
     assert captured["payload"]["license_key"] == "DEMO123"
+    assert captured["payload"]["hardware_id"] == "a" * 64
+    assert captured["payload"]["device_hmac"] == "b" * 64
+    assert captured["payload"]["session_token"] == "session.jwt"
     assert captured["payload"]["stats"]["total_revenue"] == 1000
     assert captured["payload"]["narrative"] == "Original narrative"
     assert captured["payload"]["instruction"] == "Make it more persuasive"
     assert captured["payload"]["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
     assert captured["headers"]["Authorization"].startswith("Bearer ")
     assert len(captured["headers"]["X-Payload-SHA256"]) == 64
+    assert captured["headers"]["X-Device-ID"] == "a" * 64
+    assert captured["headers"]["X-Device-HMAC"] == "b" * 64
+    assert captured["headers"]["X-Session-Token"] == "session.jwt"
     assert result["model"] == "gpt-4o-mini"
     assert result["fact_check_locked"] is True
 

@@ -199,13 +199,21 @@ def _post_gatekeeper(path, payload):
         or os.getenv("GATEKEEPER_PUBLIC_URL")
         or DEFAULT_GATEKEEPER_URL
     ).rstrip("/")
+    headers = {
+        "Authorization": authorization_header(payload),
+        "X-Payload-SHA256": payload_hash(payload),
+    }
+    if payload.get("hardware_id"):
+        headers["X-Device-ID"] = str(payload.get("hardware_id"))
+    if payload.get("device_hmac"):
+        headers["X-Device-HMAC"] = str(payload.get("device_hmac"))
+    if payload.get("session_token"):
+        headers["X-Session-Token"] = str(payload.get("session_token"))
+
     return requests.post(
         f"{gatekeeper_url}{path}",
         json=payload,
-        headers={
-            "Authorization": authorization_header(payload),
-            "X-Payload-SHA256": payload_hash(payload),
-        },
+        headers=headers,
         timeout=AI_TIMEOUT_SECONDS,
     )
 
@@ -291,16 +299,23 @@ def build_audit_context(df, stats):
     }
 
 
-def get_ai_narrative_result(stats, license_key, directive=None, audit_context=None):
+def _device_extra(device_auth=None):
+    device_auth = device_auth if isinstance(device_auth, dict) else {}
+    return {
+        key: str(device_auth.get(key, "")).strip()
+        for key in ("hardware_id", "device_hmac", "session_token")
+        if str(device_auth.get(key, "")).strip()
+    }
+
+
+def get_ai_narrative_result(stats, license_key, directive=None, audit_context=None, device_auth=None):
     directive = sanitize_directive(directive)
-    payload = gatekeeper_payload(
-        stats,
-        license_key,
-        {
-            "directive": directive,
-            "audit_context": audit_context or {},
-        },
-    )
+    extra = {
+        "directive": directive,
+        "audit_context": audit_context or {},
+    }
+    extra.update(_device_extra(device_auth))
+    payload = gatekeeper_payload(stats, license_key, extra)
 
     try:
         response = _post_gatekeeper("/verify-and-generate", payload)
@@ -325,16 +340,17 @@ def get_ai_narrative_result(stats, license_key, directive=None, audit_context=No
         }
 
 
-def get_ai_narrative(stats, license_key, directive=None, audit_context=None):
+def get_ai_narrative(stats, license_key, directive=None, audit_context=None, device_auth=None):
     return get_ai_narrative_result(
         stats,
         license_key,
         directive=directive,
         audit_context=audit_context,
+        device_auth=device_auth,
     )["narrative"]
 
 
-def refine_report(stats, narrative, instruction, license_key, directive=None, report_id=None):
+def refine_report(stats, narrative, instruction, license_key, directive=None, report_id=None, device_auth=None):
     directive = sanitize_directive(directive)
     extra = {
         "narrative": str(narrative or "").strip(),
@@ -343,6 +359,7 @@ def refine_report(stats, narrative, instruction, license_key, directive=None, re
     }
     if report_id:
         extra["parent_report_id"] = str(report_id)
+    extra.update(_device_extra(device_auth))
     payload = gatekeeper_payload(stats, license_key, extra)
 
     try:
@@ -508,7 +525,7 @@ def get_top_3_insights(source):
     )[:3]
 
 
-def analyze_data(csv_source, license_key="", directive=None):
+def analyze_data(csv_source, license_key="", directive=None, device_auth=None):
     df = read_marketing_csv(csv_source)
 
     total_spend = df["Spend"].sum()
@@ -532,7 +549,13 @@ def analyze_data(csv_source, license_key="", directive=None):
     directive = sanitize_directive(directive)
     audit_context = build_audit_context(df, stats)
     narrative_result = (
-        get_ai_narrative_result(stats, license_key, directive=directive, audit_context=audit_context)
+        get_ai_narrative_result(
+            stats,
+            license_key,
+            directive=directive,
+            audit_context=audit_context,
+            device_auth=device_auth,
+        )
         if license_key
         else {
             "narrative": _fallback_narrative(stats),

@@ -437,6 +437,12 @@
         border-top: 1px solid var(--line);
       }
 
+      .session-widget {
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+
       .compliance-widget header {
         display: flex;
         justify-content: space-between;
@@ -445,11 +451,60 @@
         margin-bottom: 12px;
       }
 
-      .compliance-widget .icon-button {
+      .session-widget header {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+
+      .compliance-widget .icon-button,
+      .session-widget .icon-button {
         min-height: 34px;
         padding: 0 10px;
         font-size: 12px;
         font-weight: 800;
+      }
+
+      .session-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 12px;
+      }
+
+      .session-entry {
+        padding: 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fbfcff;
+      }
+
+      .session-entry.is-alert {
+        border-color: #fecaca;
+        background: #fff7f7;
+      }
+
+      .session-entry strong,
+      .session-entry span {
+        display: block;
+      }
+
+      .session-entry strong {
+        color: var(--text);
+        font-size: 13px;
+        line-height: 1.35;
+      }
+
+      .session-entry span {
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .session-entry.is-alert span {
+        color: var(--red);
       }
 
       .audit-panel-head {
@@ -697,6 +752,25 @@
             </dl>
             <div class="admin-status" id="compliance-status" role="status" aria-live="polite"></div>
           </div>
+          <div class="session-widget" aria-label="Session Monitor">
+            <header>
+              <h2>Session Monitor</h2>
+              <button class="icon-button" id="refresh-session-monitor" type="button" aria-label="Refresh active devices and identity alerts">Refresh</button>
+            </header>
+            <dl class="status-list">
+              <div class="status-row">
+                <dt>Active Devices</dt>
+                <dd id="session-active-state">Checking</dd>
+              </div>
+              <div class="status-row">
+                <dt>Flagged Keys</dt>
+                <dd id="session-alert-state">Checking</dd>
+              </div>
+            </dl>
+            <div class="session-list" id="session-device-list"></div>
+            <div class="session-list" id="session-alert-list"></div>
+            <div class="admin-status" id="session-monitor-status" role="status" aria-live="polite"></div>
+          </div>
         </aside>
       </div>
     </main>
@@ -729,6 +803,12 @@
       const complianceIpsState = document.querySelector("#compliance-ips-state");
       const complianceStatus = document.querySelector("#compliance-status");
       const refreshComplianceButton = document.querySelector("#refresh-compliance");
+      const sessionActiveState = document.querySelector("#session-active-state");
+      const sessionAlertState = document.querySelector("#session-alert-state");
+      const sessionDeviceList = document.querySelector("#session-device-list");
+      const sessionAlertList = document.querySelector("#session-alert-list");
+      const sessionMonitorStatus = document.querySelector("#session-monitor-status");
+      const refreshSessionMonitorButton = document.querySelector("#refresh-session-monitor");
       const settingsTabs = document.querySelectorAll(".settings-tab");
       const settingsPanels = document.querySelectorAll(".settings-panel");
       const sampleReportCacheKey = "narrativeai.sampleReport";
@@ -998,6 +1078,63 @@
         }
       }
 
+      function renderSessionEntries(entries, type = "device") {
+        if (!entries.length) {
+          return "";
+        }
+
+        return entries.map((entry) => {
+          if (type === "alert") {
+            return `
+              <article class="session-entry is-alert">
+                <strong>${escapeHtml(entry.alert_type || "Identity alert")} - ${escapeHtml(entry.key_fingerprint || "unknown key")}</strong>
+                <span>${escapeHtml(entry.detail || "Unauthorized device attempt")} ${entry.attempted_device_fingerprint ? `Device ${escapeHtml(entry.attempted_device_fingerprint)}` : ""}</span>
+              </article>
+            `;
+          }
+          return `
+            <article class="session-entry">
+              <strong>Device ${escapeHtml(entry.device_fingerprint || "unknown")} - Key ${escapeHtml(entry.key_fingerprint || "unknown")}</strong>
+              <span>${escapeHtml(entry.last_seen_at || entry.locked_at || "No activity yet")} - ${Number(entry.use_count || 0)} request${Number(entry.use_count || 0) === 1 ? "" : "s"}</span>
+            </article>
+          `;
+        }).join("");
+      }
+
+      async function refreshSessionMonitor() {
+        setComplianceState(sessionActiveState, "Checking", true);
+        setComplianceState(sessionAlertState, "Checking", true);
+        setStatus(sessionMonitorStatus, "Refreshing active devices...");
+
+        try {
+          const response = await fetch("/api/session-monitor");
+          const payload = await response.json();
+          const activeDevices = payload.active_devices || [];
+          const alerts = payload.alerts || [];
+          const alertCount = Number(payload.alert_count ?? alerts.length);
+
+          setComplianceState(sessionActiveState, `${activeDevices.length} active`, true);
+          setComplianceState(sessionAlertState, `${alertCount} flagged`, alertCount === 0);
+          sessionDeviceList.innerHTML = renderSessionEntries(activeDevices, "device");
+          sessionAlertList.innerHTML = renderSessionEntries(alerts, "alert");
+
+          if (!response.ok || !payload.ok) {
+            setStatus(sessionMonitorStatus, payload.error || "Session Monitor is unavailable.", "error");
+            return payload;
+          }
+
+          setStatus(sessionMonitorStatus, alertCount ? "Identity alerts require review." : "Device locks healthy.", alertCount ? "error" : "success");
+          return payload;
+        } catch (error) {
+          setComplianceState(sessionActiveState, "Unavailable", false);
+          setComplianceState(sessionAlertState, "Unavailable", false);
+          sessionDeviceList.innerHTML = "";
+          sessionAlertList.innerHTML = "";
+          setStatus(sessionMonitorStatus, "Session Monitor is unavailable.", "error");
+          return null;
+        }
+      }
+
       function updateLogoPreview() {
         logoPreview.innerHTML = agencyLogoDataUrl
           ? `<img src="${agencyLogoDataUrl}" alt="Agency logo preview"><span>Logo ready for reports</span>`
@@ -1126,12 +1263,14 @@
 
       refreshAuditButton.addEventListener("click", () => refreshAuditList());
       refreshComplianceButton.addEventListener("click", () => refreshComplianceHealth());
+      refreshSessionMonitorButton.addEventListener("click", () => refreshSessionMonitor());
 
       updateLogoPreview();
       updateSummary();
       loadBusinessSettings();
       refreshAuditList();
       refreshComplianceHealth();
+      refreshSessionMonitor();
       warmSampleReportCache();
     </script>
   </body>

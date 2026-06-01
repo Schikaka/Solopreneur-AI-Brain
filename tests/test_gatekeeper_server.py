@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import hmac
 import json
@@ -14,10 +15,13 @@ from gatekeeper_server import (
     generate_narrative_result,
     generate_refinement_result,
 )
+from license_store import device_hmac
 from security_tokens import authorization_header, gatekeeper_payload, payload_hash
 
 
 FORBIDDEN_CLIENT_TERMS = ("gatekeeper", "license", "licence", "api key", "openai", "circuit breaker", "upstream model")
+DEVICE_ID = "a" * 64
+OTHER_DEVICE_ID = "b" * 64
 
 
 @pytest.fixture(autouse=True)
@@ -46,8 +50,34 @@ def signed_headers_for_payload(payload, remote_ip=None):
     return headers
 
 
+def _b64url_encode(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
+
+
+def device_session_token(license_key="DEMO123", device_id=DEVICE_ID, expires_in=1800):
+    now = int(time.time())
+    header = {"alg": "HS256", "typ": "JWT"}
+    claims = {"iat": now, "exp": now + expires_in, "hardware_id": device_id}
+    signing_input = ".".join(
+        [
+            _b64url_encode(json.dumps(header, separators=(",", ":")).encode("utf-8")),
+            _b64url_encode(json.dumps(claims, separators=(",", ":")).encode("utf-8")),
+        ]
+    )
+    signature = hmac.new(str(license_key).encode("utf-8"), signing_input.encode("ascii"), hashlib.sha256).digest()
+    return f"{signing_input}.{_b64url_encode(signature)}"
+
+
+def device_extra(license_key="DEMO123", device_id=DEVICE_ID, session_token=None):
+    return {
+        "hardware_id": device_id,
+        "device_hmac": device_hmac(license_key, device_id),
+        "session_token": session_token or device_session_token(license_key, device_id),
+    }
+
+
 def post_signed(client, license_key, stats=None):
-    payload = gatekeeper_payload(stats if stats is not None else {}, license_key)
+    payload = gatekeeper_payload(stats if stats is not None else {}, license_key, device_extra(license_key))
     return client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
 
 
@@ -106,23 +136,29 @@ def sample_audit_context():
 
 
 def post_signed_with_audit(client, license_key, stats):
+    extra = device_extra(license_key)
+    extra.update({"audit_context": sample_audit_context(), "directive": {"tone": "Boardroom", "goal": "Budget Request"}})
     payload = gatekeeper_payload(
         stats,
         license_key,
-        {"audit_context": sample_audit_context(), "directive": {"tone": "Boardroom", "goal": "Budget Request"}},
+        extra,
     )
     return client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
 
 
 def post_signed_refine(client, license_key, stats, narrative="Original narrative", instruction="Make it sharper"):
-    payload = gatekeeper_payload(
-        stats,
-        license_key,
+    extra = device_extra(license_key)
+    extra.update(
         {
             "narrative": narrative,
             "instruction": instruction,
             "directive": {"tone": "Precise", "goal": "Retention"},
-        },
+        }
+    )
+    payload = gatekeeper_payload(
+        stats,
+        license_key,
+        extra,
     )
     return client.post("/refine", json=payload, headers=signed_headers(payload))
 
@@ -386,6 +422,69 @@ def test_gatekeeper_valid_license_returns_narrative_without_local_key(monkeypatc
     assert payload["report_id"]
     assert payload["audit"]["reasoning_trace_available"] is True
     assert payload["audit"]["math_anomaly_detected"] is False
+
+
+def test_hardware_lock_rejects_second_device_and_records_alert():
+    client = create_app().test_client()
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+    first_payload = gatekeeper_payload(stats, "DEMO123", device_extra("DEMO123", DEVICE_ID))
+    second_payload = gatekeeper_payload(stats, "DEMO123", device_extra("DEMO123", OTHER_DEVICE_ID))
+
+    first_response = client.post("/verify-and-generate", json=first_payload, headers=signed_headers(first_payload))
+    second_response = client.post("/verify-and-generate", json=second_payload, headers=signed_headers(second_payload))
+    monitor_response = client.get("/admin/session-monitor")
+    monitor = monitor_response.get_json()
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 403
+    assert second_response.get_json()["identity"]["reason"] == "hardware_lock_violation"
+    assert monitor_response.status_code == 200
+    assert monitor["active_device_count"] == 1
+    assert monitor["alert_count"] == 1
+    assert monitor["alerts"][0]["alert_type"] == "hardware_lock_violation"
+
+
+def test_hardware_lock_rejects_invalid_device_hmac():
+    client = create_app().test_client()
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+    extra = device_extra("DEMO123", DEVICE_ID)
+    extra["device_hmac"] = "0" * 64
+    payload = gatekeeper_payload(stats, "DEMO123", extra)
+
+    response = client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
+
+    assert response.status_code == 403
+    assert response.get_json()["identity"]["reason"] == "invalid_device_hmac"
+
+
+def test_gatekeeper_rejects_invalid_secure_session():
+    client = create_app().test_client()
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+    extra = device_extra("DEMO123", DEVICE_ID, session_token=device_session_token("DEMO123", OTHER_DEVICE_ID))
+    payload = gatekeeper_payload(stats, "DEMO123", extra)
+
+    response = client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
+
+    assert response.status_code == 403
+    assert "hardware mismatch" in response.get_json()["identity"]["reason"].lower()
 
 
 def test_gatekeeper_refine_without_local_key_returns_fact_locked_result(monkeypatch):
