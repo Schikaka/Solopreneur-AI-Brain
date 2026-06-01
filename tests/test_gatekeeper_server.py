@@ -1,7 +1,13 @@
 import pytest
 
 import gatekeeper_server
-from gatekeeper_server import IdempotentCache, SimpleCircuitBreaker, create_app, generate_narrative_result
+from gatekeeper_server import (
+    IdempotentCache,
+    SimpleCircuitBreaker,
+    create_app,
+    generate_narrative_result,
+    generate_refinement_result,
+)
 from security_tokens import authorization_header, gatekeeper_payload, payload_hash
 
 
@@ -37,6 +43,19 @@ def signed_headers_for_payload(payload, remote_ip=None):
 def post_signed(client, license_key, stats=None):
     payload = gatekeeper_payload(stats if stats is not None else {}, license_key)
     return client.post("/verify-and-generate", json=payload, headers=signed_headers(payload))
+
+
+def post_signed_refine(client, license_key, stats, narrative="Original narrative", instruction="Make it sharper"):
+    payload = gatekeeper_payload(
+        stats,
+        license_key,
+        {
+            "narrative": narrative,
+            "instruction": instruction,
+            "directive": {"tone": "Precise", "goal": "Retention"},
+        },
+    )
+    return client.post("/refine", json=payload, headers=signed_headers(payload))
 
 
 def assert_boardroom_narrative(narrative):
@@ -118,6 +137,42 @@ def test_gatekeeper_valid_license_returns_narrative_without_local_key(monkeypatc
     assert_boardroom_narrative(payload["narrative"])
     assert payload["source"] == "deterministic_fallback"
     assert payload["token_usage"]["total_tokens"] == 0
+
+
+def test_gatekeeper_refine_without_local_key_returns_fact_locked_result(monkeypatch):
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("EMERGENT_LLM_KEY", raising=False)
+    client = create_app().test_client()
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+    narrative = (
+        "**Executive CMO Brief**\n"
+        "The portfolio generated $1,000.00 in secured return from $250.00 in deployed capital, producing a 4.00x ROAS profile.\n\n"
+        "**Execution Efficiency**\n"
+        "Every dollar is returning 4.00x.\n\n"
+        "**Campaign Momentum**\n"
+        "Search is the lead campaign.\n\n"
+        "**Optimization Pathways**\n"
+        "Scale the proven pattern.\n\n"
+        "**Strategic Recommendations**\n"
+        "1. Scale Search.\n"
+        "2. Protect return quality.\n"
+        "3. Review weekly."
+    )
+
+    response = post_signed_refine(client, "DEMO123", stats, narrative=narrative)
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["model"] == "gpt-4o-mini"
+    assert payload["fact_check_locked"] is True
+    assert payload["source"] == "deterministic_refinement"
+    assert_boardroom_narrative(payload["narrative"])
 
 
 def test_semantic_firewall_rejects_prompt_injection():
@@ -238,6 +293,97 @@ def test_openai_generation_uses_elite_cmo_prompt(monkeypatch):
     assert "Rule of Three" in system_prompt
     assert "PAS" in system_prompt
     assert "Strategic Recommendations" in user_prompt
+
+
+def test_openai_refinement_uses_gpt_4o_mini_and_fact_lock(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
+    monkeypatch.setattr(gatekeeper_server, "IDEMPOTENT_CACHE", IdempotentCache())
+    captured = {}
+    narrative = (
+        "**Executive CMO Brief**\n"
+        "The portfolio generated $1,000.00 in secured return from $250.00 in deployed capital.\n\n"
+        "**Execution Efficiency**\n"
+        "Capital efficiency is strong at 4.00x ROAS.\n\n"
+        "**Campaign Momentum**\n"
+        "Search is the clear momentum driver.\n\n"
+        "**Optimization Pathways**\n"
+        "The next step is disciplined scale.\n\n"
+        "**Strategic Recommendations**\n"
+        "1. Scale the strongest segment.\n"
+        "2. Protect return quality.\n"
+        "3. Review momentum weekly."
+    )
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": narrative}}],
+                "usage": {"prompt_tokens": 20, "completion_tokens": 30, "total_tokens": 50},
+            }
+
+    def post(url, headers, json, timeout):
+        captured["body"] = json
+        return Response()
+
+    monkeypatch.setattr("gatekeeper_server.requests.post", post)
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    result = generate_refinement_result(
+        stats,
+        narrative,
+        "Make it more concise",
+        directive={"tone": "Precise", "goal": "Retention"},
+    )
+    system_prompt = captured["body"]["messages"][0]["content"]
+    user_prompt = captured["body"]["messages"][1]["content"]
+
+    assert captured["body"]["model"] == "gpt-4o-mini"
+    assert result["source"] == "openai_refinement"
+    assert result["fact_check_locked"] is True
+    assert "FACT-CHECK LOCK" in system_prompt
+    assert "Do not change" in system_prompt
+    assert '"total_revenue": 1000' in user_prompt
+    assert "tone=Precise; goal=Retention" in user_prompt
+
+
+def test_openai_refinement_falls_back_when_numbers_change(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key")
+    monkeypatch.setattr(gatekeeper_server, "OPENAI_CIRCUIT", SimpleCircuitBreaker(fail_max=2, reset_timeout=60))
+
+    class Response:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "choices": [{"message": {"content": "Revenue is now $999.00 with 4.00x ROAS."}}],
+                "usage": {"prompt_tokens": 10, "completion_tokens": 10, "total_tokens": 20},
+            }
+
+    monkeypatch.setattr("gatekeeper_server.requests.post", lambda *args, **kwargs: Response())
+    stats = {
+        "total_revenue": 1000,
+        "total_spend": 250,
+        "avg_roas": 4,
+        "total_conversions": 10,
+        "top_campaign": "Search",
+    }
+
+    result = generate_refinement_result(stats, "Original narrative", "Make the revenue bigger")
+
+    assert result["source"] == "fact_check_fallback"
+    assert "999" not in result["narrative"]
+    assert result["fact_check_locked"] is True
 
 
 def test_openai_generation_falls_back_when_contract_is_broken(monkeypatch):

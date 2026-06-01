@@ -63,6 +63,12 @@ def test_index_has_nonce_csp(client):
     assert b"/api/system-status" in response.data
     assert b"renderReportSkeleton" in response.data
     assert b"Elite Stability Notice" in response.data
+    assert b"Strategic Directive" in response.data
+    assert b"directive-tone" in response.data
+    assert b"directive-goal" in response.data
+    assert b"Tweak this report..." in response.data
+    assert b"/refine" in response.data
+    assert b"Fact-Check Lock" in response.data
 
 
 def test_system_status_ready(client, monkeypatch):
@@ -159,14 +165,16 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
     )
     captured = {}
 
-    def fake_analyze_data(source, license_key):
+    def fake_analyze_data(source, license_key, directive=None):
         captured["source"] = source
         captured["payload"] = source.getvalue()
         captured["license_key"] = license_key
+        captured["directive"] = directive
         return {
             "stats": {"total_revenue": 300, "total_spend": 100, "avg_roas": 3, "total_conversions": 5},
             "insights": [],
             "daily_trends": [],
+            "directive": directive,
             "narrative": "In-memory report",
         }
 
@@ -174,7 +182,12 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
 
     response = client.post(
         "/api/analyze",
-        data={"file": (BytesIO(csv_bytes), "report.csv"), "license_key": "DEMO123"},
+        data={
+            "file": (BytesIO(csv_bytes), "report.csv"),
+            "license_key": "DEMO123",
+            "tone": "Persuasive",
+            "goal": "Budget Request",
+        },
         content_type="multipart/form-data",
     )
 
@@ -182,6 +195,7 @@ def test_upload_processes_csv_in_memory(client, monkeypatch):
     assert isinstance(captured["source"], BytesIO)
     assert captured["payload"] == csv_bytes
     assert captured["license_key"] == "DEMO123"
+    assert captured["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
 
 
 def test_upload_valid_csv(client):
@@ -201,3 +215,40 @@ def test_upload_valid_csv(client):
     assert response.status_code == 200
     assert payload["stats"]["total_spend"] == 220.0
     assert payload["stats"]["total_conversions"] == 13
+
+
+def test_refine_route_calls_refinement_backend(client, monkeypatch):
+    captured = {}
+
+    def fake_refine_report(stats, narrative, instruction, license_key, directive=None):
+        captured["stats"] = stats
+        captured["narrative"] = narrative
+        captured["instruction"] = instruction
+        captured["license_key"] = license_key
+        captured["directive"] = directive
+        return {
+            "narrative": "Refined narrative",
+            "model": "gpt-4o-mini",
+            "fact_check_locked": True,
+        }
+
+    monkeypatch.setattr("app.refine_report", fake_refine_report)
+
+    response = client.post(
+        "/refine",
+        json={
+            "license_key": "DEMO123",
+            "stats": {"total_revenue": 300, "total_spend": 100, "avg_roas": 3},
+            "narrative": "Original narrative",
+            "instruction": "Make it sharper",
+            "directive": {"tone": "Precise", "goal": "Retention"},
+        },
+    )
+    payload = response.get_json()
+
+    assert response.status_code == 200
+    assert payload["model"] == "gpt-4o-mini"
+    assert payload["fact_check_locked"] is True
+    assert captured["license_key"] == "DEMO123"
+    assert captured["instruction"] == "Make it sharper"
+    assert captured["directive"] == {"tone": "Precise", "goal": "Retention"}

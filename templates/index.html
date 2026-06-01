@@ -40,7 +40,8 @@
       }
 
       button,
-      input {
+      input,
+      select {
         font: inherit;
       }
 
@@ -323,6 +324,62 @@
         stroke-width: 2.2;
       }
 
+      .directive-panel {
+        display: grid;
+        gap: 12px;
+        margin-top: 14px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f8fafc;
+      }
+
+      .directive-panel[hidden] {
+        display: none;
+      }
+
+      .directive-panel h2 {
+        font-size: 15px;
+      }
+
+      .directive-panel p {
+        margin-top: 6px;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .directive-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .directive-field label {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .directive-field select {
+        width: 100%;
+        min-height: 40px;
+        padding: 0 10px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .directive-note,
+      .fact-lock-note {
+        color: #166534;
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
       .actions {
         display: grid;
         grid-template-columns: 1fr 1fr;
@@ -446,6 +503,53 @@
       .narrative .font-bold {
         color: var(--text);
         font-weight: 800;
+      }
+
+      .refinement-panel {
+        display: grid;
+        gap: 12px;
+        margin-top: 18px;
+        padding-top: 18px;
+        border-top: 1px solid var(--line);
+      }
+
+      .refinement-chat {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 10px;
+      }
+
+      .refinement-chat input {
+        min-height: 42px;
+        width: 100%;
+        padding: 0 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        color: var(--text);
+      }
+
+      .refinement-chat input:focus,
+      .directive-field select:focus {
+        border-color: #93c5fd;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+        outline: none;
+      }
+
+      .refinement-status {
+        min-height: 20px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .refinement-status.success {
+        color: var(--green);
+        font-weight: 750;
+      }
+
+      .narrative-refinement-skeleton {
+        display: grid;
+        gap: 13px;
       }
 
       .copy-button {
@@ -818,7 +922,9 @@
 
         .metrics,
         .insights,
-        .actions {
+        .actions,
+        .directive-grid,
+        .refinement-chat {
           grid-template-columns: 1fr;
         }
 
@@ -868,6 +974,32 @@
                   <path d="M8 10V7a4 4 0 0 1 8 0v3"></path>
                 </svg>
                 <span>CSV data is processed in memory and never stored on the server.</span>
+              </div>
+              <div class="directive-panel" id="directive-panel" hidden>
+                <div>
+                  <h2>Strategic Directive</h2>
+                  <p>Choose the board-facing posture before the narrative is generated.</p>
+                </div>
+                <div class="directive-grid">
+                  <div class="directive-field">
+                    <label for="directive-tone">Tone</label>
+                    <select id="directive-tone" name="tone">
+                      <option>Boardroom</option>
+                      <option>Startup</option>
+                      <option>Precise</option>
+                      <option>Persuasive</option>
+                    </select>
+                  </div>
+                  <div class="directive-field">
+                    <label for="directive-goal">Goal</label>
+                    <select id="directive-goal" name="goal">
+                      <option>Budget Request</option>
+                      <option>Performance Fix</option>
+                      <option>Retention</option>
+                    </select>
+                  </div>
+                </div>
+                <div class="directive-note">Fact-Check Lock keeps CSV numbers unchanged through generation and refinement.</div>
               </div>
               <div class="actions">
                 <button class="button" id="analyze-button" type="submit">Analyze CSV</button>
@@ -951,10 +1083,14 @@
     <script nonce="{{ csp_nonce }}">
       const report = document.querySelector("#report");
       const form = document.querySelector("#upload-form");
+      const csvFileInput = document.querySelector("#csv-file");
       const analyzeButton = document.querySelector("#analyze-button");
       const sampleButton = document.querySelector("#sample-button");
       const errorBox = document.querySelector("#error");
       const statusBox = document.querySelector("#form-status");
+      const directivePanel = document.querySelector("#directive-panel");
+      const directiveTone = document.querySelector("#directive-tone");
+      const directiveGoal = document.querySelector("#directive-goal");
       const systemStatus = document.querySelector("#system-status");
       const systemStatusText = document.querySelector("#system-status-text");
       const sidebarTabButtons = document.querySelectorAll("[data-sidebar-tab]");
@@ -980,6 +1116,7 @@
       const historyVaultLimit = 30;
       let latestNarrative = "";
       let currentReportData = null;
+      let currentReportDirective = { tone: "Boardroom", goal: "Budget Request" };
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
       let historyDbPromise = null;
 
@@ -999,6 +1136,29 @@
 
       function metric(label, value) {
         return `<article class="metric"><span>${label}</span><strong>${value}</strong></article>`;
+      }
+
+      function getDirective() {
+        return {
+          tone: directiveTone?.value || "Boardroom",
+          goal: directiveGoal?.value || "Budget Request"
+        };
+      }
+
+      function directiveLabel(directive = currentReportDirective) {
+        return `${directive.tone || "Boardroom"} / ${directive.goal || "Budget Request"}`;
+      }
+
+      function updateDirectivePanel() {
+        const hasFile = Boolean(csvFileInput.files[0]);
+        directivePanel.hidden = !hasFile;
+        analyzeButton.textContent = hasFile ? "Generate Report" : "Analyze CSV";
+        if (hasFile && !statusBox.textContent) {
+          statusBox.textContent = "Strategic directive ready.";
+        }
+        if (!hasFile && statusBox.textContent === "Strategic directive ready.") {
+          statusBox.textContent = "";
+        }
       }
 
       function renderReportSkeleton(message = "Preparing report...") {
@@ -1308,6 +1468,7 @@
           report: {
             stats: data.stats,
             narrative: data.narrative,
+            directive: data.directive || currentReportDirective,
             insights: data.insights || [],
             top_daily_insights: data.top_daily_insights || [],
             daily_trends: data.daily_trends || []
@@ -1404,6 +1565,36 @@
 
       function getNarrativeText() {
         return document.querySelector("#narrative-container")?.innerText || latestNarrative;
+      }
+
+      function renderNarrativeRefinementSkeleton(message = "Refining narrative...") {
+        const narrativeContainer = document.querySelector("#narrative-container");
+        const refinementStatus = document.querySelector("#refinement-status");
+        if (!narrativeContainer) {
+          return;
+        }
+        narrativeContainer.setAttribute("aria-busy", "true");
+        narrativeContainer.innerHTML = `
+          <div class="narrative-refinement-skeleton">
+            <div class="skeleton-block skeleton-line long"></div>
+            <div class="skeleton-block skeleton-line medium"></div>
+            <div class="skeleton-block skeleton-line long"></div>
+            <div class="skeleton-block skeleton-line short"></div>
+          </div>
+        `;
+        if (refinementStatus) {
+          refinementStatus.className = "refinement-status";
+          refinementStatus.textContent = message;
+        }
+      }
+
+      function replaceNarrativeContent(narrative) {
+        const narrativeContainer = document.querySelector("#narrative-container");
+        if (!narrativeContainer) {
+          return;
+        }
+        narrativeContainer.removeAttribute("aria-busy");
+        narrativeContainer.innerHTML = renderNarrative(narrative);
       }
 
       function addWrappedText(doc, text, x, y, maxWidth, lineHeight, options = {}) {
@@ -1605,7 +1796,7 @@
       function setBusy(isBusy, message = "") {
         analyzeButton.disabled = isBusy;
         sampleButton.disabled = isBusy;
-        analyzeButton.textContent = isBusy ? "Analyzing..." : "Analyze CSV";
+        analyzeButton.textContent = isBusy ? "Analyzing..." : (csvFileInput.files[0] ? "Generate Report" : "Analyze CSV");
         if (isBusy) {
           statusBox.className = "form-status";
           statusBox.textContent = message;
@@ -1621,6 +1812,12 @@
         const insights = Array.isArray(data.insights) ? data.insights : [];
         const dailyTrends = Array.isArray(data.daily_trends) ? data.daily_trends : [];
         const maxRevenue = Math.max(...dailyTrends.map((day) => day.revenue), 1);
+        const directive = data.directive || currentReportDirective || getDirective();
+        currentReportDirective = {
+          tone: directive.tone || "Boardroom",
+          goal: directive.goal || "Budget Request"
+        };
+        data.directive = currentReportDirective;
         currentReportData = data;
         latestNarrative = data.narrative || "";
         report.removeAttribute("aria-busy");
@@ -1637,6 +1834,7 @@
           </div>
 
           <div class="report-source">${escapeHtml(sourceLabel)}</div>
+          <div class="report-source">Strategic Directive: ${escapeHtml(directiveLabel(currentReportDirective))}</div>
 
           <div class="metrics">
             ${metric("Revenue", money(stats.total_revenue))}
@@ -1686,6 +1884,14 @@
               </div>
             </div>
             <div class="narrative" id="narrative-container">${renderNarrative(data.narrative)}</div>
+            <div class="refinement-panel">
+              <div class="fact-lock-note">Fact-Check Lock active: CSV numbers stay unchanged.</div>
+              <form class="refinement-chat" id="refinement-form">
+                <input id="refinement-input" name="instruction" type="text" placeholder="Tweak this report..." autocomplete="off">
+                <button class="copy-button" id="refine-button" type="submit">Refine</button>
+              </form>
+              <div class="refinement-status" id="refinement-status" role="status" aria-live="polite"></div>
+            </div>
           </section>
         `;
       }
@@ -1742,7 +1948,7 @@
         errorBox.textContent = "";
         statusBox.className = "form-status";
 
-        const file = document.querySelector("#csv-file").files[0];
+        const file = csvFileInput.files[0];
         if (!file) {
           errorBox.textContent = "Choose a CSV file first.";
           return;
@@ -1755,12 +1961,15 @@
         }
 
         const body = new FormData();
+        const directive = getDirective();
         body.append("file", file);
         body.append("license_key", licenseKey);
+        body.append("tone", directive.tone);
+        body.append("goal", directive.goal);
 
         try {
-          renderReportSkeleton(`Analyzing ${file.name}...`);
-          setBusy(true, `Analyzing ${file.name}...`);
+          renderReportSkeleton(`Generating ${file.name}...`);
+          setBusy(true, `Generating ${file.name} with ${directiveLabel(directive)}...`);
           const { response, data } = await fetchJsonWithTimeout("/api/analyze", { method: "POST", body });
 
           if (!response.ok) {
@@ -1771,6 +1980,7 @@
 
           const analyzedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
           const sourceLabel = `Analyzed ${file.name} at ${analyzedAt}`;
+          data.directive = data.directive || directive;
           renderReport(data, sourceLabel);
           const savedToVault = await saveReportToHistory(data, sourceLabel);
           statusBox.className = "form-status success";
@@ -1785,6 +1995,22 @@
         } finally {
           setBusy(false, statusBox.textContent);
         }
+      });
+
+      csvFileInput.addEventListener("change", () => {
+        errorBox.textContent = "";
+        statusBox.className = "form-status";
+        updateDirectivePanel();
+      });
+
+      [directiveTone, directiveGoal].forEach((selector) => {
+        selector.addEventListener("change", () => {
+          currentReportDirective = getDirective();
+          if (csvFileInput.files[0]) {
+            statusBox.className = "form-status";
+            statusBox.textContent = `Strategic directive set to ${directiveLabel(currentReportDirective)}.`;
+          }
+        });
       });
 
       sampleButton.addEventListener("click", () => loadSample({ forceRefresh: true, saveToVault: true }));
@@ -1860,6 +2086,85 @@
         }
       });
 
+      report.addEventListener("submit", async (event) => {
+        const refinementForm = event.target.closest("#refinement-form");
+        if (!refinementForm) {
+          return;
+        }
+
+        event.preventDefault();
+        const input = refinementForm.querySelector("#refinement-input");
+        const button = refinementForm.querySelector("#refine-button");
+        const refinementStatus = refinementForm.parentElement.querySelector("#refinement-status");
+        const instruction = input.value.trim();
+        const originalNarrative = latestNarrative || getNarrativeText();
+
+        if (!instruction) {
+          refinementStatus.className = "refinement-status";
+          refinementStatus.textContent = "Add a refinement request first.";
+          return;
+        }
+
+        const licenseKey = getLicenseKey();
+        if (!licenseKey) {
+          refinementStatus.className = "refinement-status";
+          refinementStatus.textContent = "Open Admin to finish workspace access before refining reports.";
+          return;
+        }
+
+        if (!currentReportData?.stats || !originalNarrative) {
+          refinementStatus.className = "refinement-status";
+          refinementStatus.textContent = "Generate a report before refinement.";
+          return;
+        }
+
+        button.disabled = true;
+        input.disabled = true;
+        button.textContent = "Refining...";
+        renderNarrativeRefinementSkeleton("Refining narrative with Fact-Check Lock...");
+
+        try {
+          const { response, data } = await fetchJsonWithTimeout("/refine", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              license_key: licenseKey,
+              stats: currentReportData.stats,
+              narrative: originalNarrative,
+              instruction,
+              directive: currentReportDirective
+            })
+          });
+
+          if (!response.ok) {
+            const error = new Error(data.error || stabilityNotice);
+            error.stabilityNotice = response.status >= 500 || response.status === 429 ? data.stability_notice || stabilityNotice : "";
+            throw error;
+          }
+
+          latestNarrative = data.narrative || originalNarrative;
+          currentReportData = {
+            ...currentReportData,
+            narrative: latestNarrative,
+            directive: currentReportDirective
+          };
+          replaceNarrativeContent(latestNarrative);
+          input.value = "";
+          refinementStatus.className = "refinement-status success";
+          refinementStatus.textContent = data.fact_check_locked ? "Refined with Fact-Check Lock active." : "Refined report ready.";
+          await saveReportToHistory(currentReportData, `Refined report - ${directiveLabel(currentReportDirective)}`);
+        } catch (error) {
+          replaceNarrativeContent(originalNarrative);
+          refinementStatus.className = "refinement-status";
+          refinementStatus.textContent = stabilityMessageFor(error, "The narrative could not be refined.");
+        } finally {
+          button.disabled = false;
+          input.disabled = false;
+          button.textContent = "Refine";
+          input.focus();
+        }
+      });
+
       report.addEventListener("click", async (event) => {
         const retryButton = event.target.closest("[data-retry-action]");
         const historyButton = event.target.closest("[data-show-history]");
@@ -1877,7 +2182,7 @@
             return;
           }
 
-          const file = document.querySelector("#csv-file").files[0];
+          const file = csvFileInput.files[0];
           if (!file) {
             showSidebarTab("builder");
             errorBox.textContent = "Choose a CSV file first.";
@@ -1916,6 +2221,7 @@
         }
       });
 
+      updateDirectivePanel();
       refreshSystemStatus();
       window.setInterval(refreshSystemStatus, heartbeatIntervalMs);
       loadSample();

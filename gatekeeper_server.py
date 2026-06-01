@@ -3,6 +3,7 @@ import hmac
 import hashlib
 import logging
 import os
+import re
 import time
 import uuid
 from contextvars import ContextVar
@@ -40,6 +41,9 @@ GATEKEEPER_LIMIT = "5 per minute"
 DEFAULT_TOKEN_USAGE = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 CMO_PILLARS = ("Execution Efficiency", "Campaign Momentum", "Optimization Pathways")
 STRATEGIC_RECOMMENDATIONS_HEADER = "Strategic Recommendations"
+DIRECTIVE_TONES = ("Boardroom", "Startup", "Precise", "Persuasive")
+DIRECTIVE_GOALS = ("Budget Request", "Performance Fix", "Retention")
+REFINEMENT_MODEL = "gpt-4o-mini"
 FORBIDDEN_NARRATIVE_TERMS = (
     "gatekeeper",
     "license",
@@ -396,6 +400,17 @@ def _safe_campaign_name(value):
     return text
 
 
+def _sanitize_directive(directive):
+    directive = directive if isinstance(directive, dict) else {}
+    tone = str(directive.get("tone") or DIRECTIVE_TONES[0]).strip().title()
+    goal = str(directive.get("goal") or DIRECTIVE_GOALS[0]).strip().title()
+    if tone not in DIRECTIVE_TONES:
+        tone = DIRECTIVE_TONES[0]
+    if goal not in DIRECTIVE_GOALS:
+        goal = DIRECTIVE_GOALS[0]
+    return {"tone": tone, "goal": goal}
+
+
 def _sanitized_stats_for_narrative(stats):
     sanitized = dict(stats or {})
     sanitized["top_campaign"] = _safe_campaign_name(sanitized.get("top_campaign"))
@@ -408,8 +423,44 @@ def _has_required_cmo_sections(text):
     return all(section.lower() in lowered for section in required_sections)
 
 
-def _elite_cmo_narrative(stats):
+def _number_facts(stats):
+    facts = {}
+    for key, value in (stats or {}).items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, (int, float)):
+            facts[key] = value
+    return facts
+
+
+def _normalized_number_tokens(text):
+    tokens = set()
+    for match in re.finditer(r"(?<![\w-])\$?\d[\d,]*(?:\.\d+)?(?:x|%)?(?![\w-])", str(text or "")):
+        raw = match.group(0).replace("$", "").replace(",", "").rstrip("x%")
+        try:
+            value = float(raw)
+        except ValueError:
+            continue
+        tokens.add(f"{value:.2f}".rstrip("0").rstrip("."))
+    return tokens
+
+
+def _allowed_fact_tokens(stats):
+    allowed = {"1", "2", "3"}
+    for value in _number_facts(stats).values():
+        normalized = f"{float(value):.2f}".rstrip("0").rstrip(".")
+        allowed.add(normalized)
+    return allowed
+
+
+def _respects_fact_lock(text, stats):
+    unsupported_tokens = _normalized_number_tokens(text).difference(_allowed_fact_tokens(stats))
+    return not unsupported_tokens
+
+
+def _elite_cmo_narrative(stats, directive=None):
     sanitized = _sanitized_stats_for_narrative(stats)
+    directive = _sanitize_directive(directive)
     total_revenue = _safe_float(sanitized.get("total_revenue"))
     total_spend = _safe_float(sanitized.get("total_spend"))
     avg_roas = _safe_float(sanitized.get("avg_roas"))
@@ -436,7 +487,8 @@ def _elite_cmo_narrative(stats):
         f"The portfolio generated {_format_money(total_revenue)} in secured return from "
         f"{_format_money(total_spend)} in deployed capital, producing a {avg_roas:.2f}x ROAS profile "
         f"and {total_conversions:,} conversions. Momentum is anchored by {top_campaign}, giving leadership "
-        "a clear signal for where disciplined scaling should begin.\n\n"
+        f"a clear signal for where disciplined scaling should begin. The strategic directive is "
+        f"{directive['tone']} tone with a {directive['goal']} goal.\n\n"
         "**Execution Efficiency**\n"
         f"{efficiency_posture}: every dollar of deployed capital is currently returning {avg_roas:.2f}x. "
         "This creates a practical benchmark for budget decisions, channel prioritization, and margin protection.\n\n"
@@ -454,11 +506,13 @@ def _elite_cmo_narrative(stats):
     )
 
 
-def _build_cmo_messages(stats):
+def _build_cmo_messages(stats, directive=None):
     sanitized_stats = _sanitized_stats_for_narrative(stats)
+    directive = _sanitize_directive(directive)
     output_contract = (
         "Create a professional client-ready report using only these marketing statistics:\n"
         f"{json.dumps(sanitized_stats, sort_keys=True)}\n\n"
+        f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
         "Return plain markdown with exactly this structure:\n"
         "**Executive CMO Brief**\n"
         "One concise opening paragraph using the phrases deployed capital and secured return.\n\n"
@@ -479,9 +533,45 @@ def _build_cmo_messages(stats):
     ]
 
 
-def _stable_fallback_report(stats, reason="circuit_open"):
+def _build_refinement_messages(stats, narrative, instruction, directive=None):
+    sanitized_stats = _sanitized_stats_for_narrative(stats)
+    directive = _sanitize_directive(directive)
+    fact_lock = (
+        "FACT-CHECK LOCK: CSV numbers are locked. Do not change, infer, round differently, "
+        "invent, remove, or replace any numeric fact from the provided stats or narrative. "
+        "If the user asks for a numeric change, refuse that part and preserve the locked figures."
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a Senior CMO refining a client-ready marketing report. "
+                "Keep the output professional, authoritative, and immediately boardroom-ready. "
+                f"{fact_lock} Use gpt-4o-mini behavior: concise, precise, and grounded."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Strategic Directive: tone={directive['tone']}; goal={directive['goal']}.\n"
+                f"Locked stats JSON: {json.dumps(sanitized_stats, sort_keys=True)}\n\n"
+                f"Original narrative:\n{str(narrative or '').strip()}\n\n"
+                f"Refinement request:\n{str(instruction or '').strip()}\n\n"
+                "Return the full refined narrative only. Preserve the existing section structure when possible."
+            ),
+        },
+    ]
+
+
+def _fallback_refinement(stats, narrative, instruction, directive=None):
+    if narrative and _respects_fact_lock(narrative, stats) and not _contains_forbidden_narrative_terms(narrative):
+        return str(narrative).strip()
+    return _elite_cmo_narrative(stats, directive=directive)
+
+
+def _stable_fallback_report(stats, reason="circuit_open", directive=None):
     return {
-        "narrative": _elite_cmo_narrative(stats),
+        "narrative": _elite_cmo_narrative(stats, directive=directive),
         "source": "stable_fallback",
         "circuit_state": "open",
         "token_usage": DEFAULT_TOKEN_USAGE,
@@ -493,8 +583,8 @@ def _stable_fallback_report(stats, reason="circuit_open"):
     }
 
 
-def _fallback_narrative(stats):
-    return _elite_cmo_narrative(stats)
+def _fallback_narrative(stats, directive=None):
+    return _elite_cmo_narrative(stats, directive=directive)
 
 
 class CircuitOpenError(RuntimeError):
@@ -735,14 +825,15 @@ def _breaker_error(exc):
     return False
 
 
-def generate_narrative_result(stats):
+def generate_narrative_result(stats, directive=None):
     api_key = os.getenv("OPENAI_API_KEY") or os.getenv("EMERGENT_LLM_KEY")
-    cache_key = f"narrative:{_cache_key(stats)}"
+    directive = _sanitize_directive(directive)
+    cache_key = f"narrative:{_cache_key({'stats': stats, 'directive': directive})}"
     cached = IDEMPOTENT_CACHE.get(cache_key)
 
     if not api_key:
         return {
-            "narrative": _fallback_narrative(stats),
+            "narrative": _fallback_narrative(stats, directive=directive),
             "source": "deterministic_fallback",
             "circuit_state": "closed",
             "token_usage": DEFAULT_TOKEN_USAGE,
@@ -758,13 +849,13 @@ def generate_narrative_result(stats):
             cached["source"] = "idempotent_cache"
             cached["circuit_state"] = "open"
             return cached
-        fallback = _stable_fallback_report(stats, reason="circuit_open")
+        fallback = _stable_fallback_report(stats, reason="circuit_open", directive=directive)
         IDEMPOTENT_CACHE.set(cache_key, fallback)
         return fallback
 
     body = {
         "model": os.getenv("OPENAI_MODEL", os.getenv("EMERGENT_LLM_MODEL", "gpt-4o-mini")),
-        "messages": _build_cmo_messages(stats),
+        "messages": _build_cmo_messages(stats, directive=directive),
     }
 
     try:
@@ -774,7 +865,7 @@ def generate_narrative_result(stats):
         source = "openai"
         if _contains_forbidden_narrative_terms(narrative) or not _has_required_cmo_sections(narrative):
             log_event(logging.WARNING, "openai_generation_contract_fallback")
-            narrative = _elite_cmo_narrative(stats)
+            narrative = _elite_cmo_narrative(stats, directive=directive)
             source = "contract_fallback"
         result = {
             "narrative": narrative,
@@ -796,13 +887,65 @@ def generate_narrative_result(stats):
             cached["source"] = "idempotent_cache"
             cached["circuit_state"] = "open" if _circuit_is_open() else "closed"
             return cached
-        fallback = _stable_fallback_report(stats, reason=reason)
+        fallback = _stable_fallback_report(stats, reason=reason, directive=directive)
         IDEMPOTENT_CACHE.set(cache_key, fallback)
         return fallback
 
 
 def generate_narrative(stats):
     return generate_narrative_result(stats)["narrative"]
+
+
+def generate_refinement_result(stats, narrative, instruction, directive=None):
+    directive = _sanitize_directive(directive)
+    instruction = str(instruction or "").strip()
+    if not instruction:
+        raise ValueError("Refinement instruction is required.")
+
+    api_key = os.getenv("OPENAI_API_KEY") or os.getenv("EMERGENT_LLM_KEY")
+    if not api_key or _circuit_is_open():
+        return {
+            "narrative": _fallback_refinement(stats, narrative, instruction, directive=directive),
+            "source": "deterministic_refinement",
+            "model": REFINEMENT_MODEL,
+            "circuit_state": "open" if _circuit_is_open() else "closed",
+            "token_usage": DEFAULT_TOKEN_USAGE,
+            "fact_check_locked": True,
+        }
+
+    body = {
+        "model": REFINEMENT_MODEL,
+        "messages": _build_refinement_messages(stats, narrative, instruction, directive=directive),
+    }
+
+    try:
+        response_json = _call_openai_with_breaker(body, purpose="narrative_refinement")
+        token_usage = response_json.get("usage", DEFAULT_TOKEN_USAGE) or DEFAULT_TOKEN_USAGE
+        refined = str(response_json["choices"][0]["message"]["content"]).strip()
+        source = "openai_refinement"
+        if _contains_forbidden_narrative_terms(refined) or not _respects_fact_lock(refined, stats):
+            log_event(logging.WARNING, "openai_refinement_fact_lock_fallback")
+            refined = _fallback_refinement(stats, narrative, instruction, directive=directive)
+            source = "fact_check_fallback"
+        return {
+            "narrative": refined,
+            "source": source,
+            "model": REFINEMENT_MODEL,
+            "circuit_state": "closed",
+            "token_usage": token_usage,
+            "fact_check_locked": True,
+        }
+    except Exception as exc:
+        reason = "circuit_open" if _breaker_error(exc) or _circuit_is_open() else "upstream_error"
+        log_event(logging.WARNING, "openai_refinement_fallback", reason=reason, error=str(exc))
+        return {
+            "narrative": _fallback_refinement(stats, narrative, instruction, directive=directive),
+            "source": "deterministic_refinement",
+            "model": REFINEMENT_MODEL,
+            "circuit_state": "open" if _circuit_is_open() else "closed",
+            "token_usage": DEFAULT_TOKEN_USAGE,
+            "fact_check_locked": True,
+        }
 
 
 def create_app():
@@ -825,7 +968,7 @@ def create_app():
     @app.after_request
     def finish_request_context(response):
         response.headers["X-Request-ID"] = REQUEST_ID.get()
-        if request.path == "/verify-and-generate":
+        if request.path in {"/verify-and-generate", "/refine"}:
             response.headers["Cache-Control"] = "no-store"
         log_event(
             logging.INFO,
@@ -854,8 +997,10 @@ def create_app():
         payload = request.get_json(silent=True) or {}
         stats = payload.get("stats")
         license_key = str(payload.get("license_key", "")).strip()
+        raw_directive = payload.get("directive") or {}
+        directive = _sanitize_directive(raw_directive)
         TENANT_ID.set(_tenant_id(license_key))
-        signed_payload = gatekeeper_payload(stats, license_key)
+        signed_payload = gatekeeper_payload(stats, license_key, {"directive": raw_directive} if raw_directive else None)
 
         try:
             _verify_signed_payload(signed_payload)
@@ -888,7 +1033,7 @@ def create_app():
         )
 
         try:
-            generation = generate_narrative_result(stats)
+            generation = generate_narrative_result(stats, directive=directive)
             TOKEN_USAGE.set(generation.get("token_usage", DEFAULT_TOKEN_USAGE))
             log_event(
                 logging.INFO,
@@ -911,6 +1056,69 @@ def create_app():
         except Exception as exc:
             log_event(logging.ERROR, "gatekeeper_generation_failed", error=str(exc))
             return jsonify({"error": f"Gatekeeper generation failed: {str(exc)}"}), 502
+
+    @app.post("/refine")
+    @_rate_limit(limiter)
+    def refine():
+        payload = request.get_json(silent=True) or {}
+        stats = payload.get("stats")
+        license_key = str(payload.get("license_key", "")).strip()
+        narrative = str(payload.get("narrative", "")).strip()
+        instruction = str(payload.get("instruction", "")).strip()
+        raw_directive = payload.get("directive") or {}
+        directive = _sanitize_directive(raw_directive)
+        signed_payload = gatekeeper_payload(
+            stats,
+            license_key,
+            {
+                "narrative": narrative,
+                "instruction": instruction,
+                "directive": raw_directive,
+            },
+        )
+        TENANT_ID.set(_tenant_id(license_key))
+
+        try:
+            _verify_signed_payload(signed_payload)
+        except TokenError as exc:
+            log_event(logging.WARNING, "gatekeeper_refine_auth_rejected", reason=str(exc))
+            return jsonify({"error": str(exc)}), 401
+
+        if not license_store.is_valid(license_key):
+            log_event(logging.WARNING, "refine_license_validation_failed")
+            return jsonify({"error": "Invalid license key."}), 403
+
+        if not isinstance(stats, dict):
+            return jsonify({"error": "Stats payload must be a JSON object."}), 400
+        if not narrative:
+            return jsonify({"error": "Original narrative is required."}), 400
+        if not instruction:
+            return jsonify({"error": "Refinement instruction is required."}), 400
+
+        firewall_decision = SEMANTIC_FIREWALL.inspect(stats, request_context=instruction)
+        if not firewall_decision["allowed"]:
+            log_event(
+                logging.WARNING,
+                "refine_semantic_firewall_rejected",
+                category=firewall_decision["category"],
+                reason=firewall_decision["reason"],
+            )
+            return jsonify({"error": "Semantic firewall rejected the request.", "firewall": firewall_decision}), 400
+
+        try:
+            refinement = generate_refinement_result(stats, narrative, instruction, directive=directive)
+            TOKEN_USAGE.set(refinement.get("token_usage", DEFAULT_TOKEN_USAGE))
+            log_event(
+                logging.INFO,
+                "refinement_complete",
+                source=refinement.get("source"),
+                model=refinement.get("model"),
+                fact_check_locked=refinement.get("fact_check_locked"),
+            )
+            return jsonify(refinement)
+        except Exception as exc:
+            log_event(logging.ERROR, "gatekeeper_refinement_failed", error=str(exc))
+            return jsonify({"error": f"Gatekeeper refinement failed: {str(exc)}"}), 502
 
     return app
 

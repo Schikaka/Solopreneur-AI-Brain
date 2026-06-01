@@ -24,6 +24,8 @@ REQUIRED_COLUMNS = {
 }
 NUMERIC_COLUMNS = ["Spend", "Clicks", "Impressions", "Conversions", "Revenue"]
 AI_TIMEOUT_SECONDS = 30
+DIRECTIVE_TONES = {"Boardroom", "Startup", "Precise", "Persuasive"}
+DIRECTIVE_GOALS = {"Budget Request", "Performance Fix", "Retention"}
 
 
 def _missing_columns(df):
@@ -71,6 +73,17 @@ def _safe_divide(numerator, denominator):
 
 def _format_money(value):
     return f"${float(value):,.2f}"
+
+
+def sanitize_directive(directive):
+    directive = directive if isinstance(directive, dict) else {}
+    tone = str(directive.get("tone") or "Boardroom").strip().title()
+    goal = str(directive.get("goal") or "Budget Request").strip().title()
+    if tone not in DIRECTIVE_TONES:
+        tone = "Boardroom"
+    if goal not in DIRECTIVE_GOALS:
+        goal = "Budget Request"
+    return {"tone": tone, "goal": goal}
 
 
 def _fallback_narrative(stats):
@@ -169,20 +182,25 @@ def read_marketing_csv(source):
     return normalize_marketing_data(df)
 
 
-def get_ai_narrative(stats, license_key):
+def _post_gatekeeper(path, payload):
     gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
-    payload = gatekeeper_payload(stats, license_key)
+    return requests.post(
+        f"{gatekeeper_url}{path}",
+        json=payload,
+        headers={
+            "Authorization": authorization_header(payload),
+            "X-Payload-SHA256": payload_hash(payload),
+        },
+        timeout=AI_TIMEOUT_SECONDS,
+    )
+
+
+def get_ai_narrative(stats, license_key, directive=None):
+    directive = sanitize_directive(directive)
+    payload = gatekeeper_payload(stats, license_key, {"directive": directive})
 
     try:
-        response = requests.post(
-            f"{gatekeeper_url}/verify-and-generate",
-            json=payload,
-            headers={
-                "Authorization": authorization_header(payload),
-                "X-Payload-SHA256": payload_hash(payload),
-            },
-            timeout=AI_TIMEOUT_SECONDS,
-        )
+        response = _post_gatekeeper("/verify-and-generate", payload)
         if response.status_code == 403:
             error = response.json().get("error", "Invalid license key.")
             raise PermissionError(error)
@@ -192,6 +210,36 @@ def get_ai_narrative(stats, license_key):
         raise
     except Exception:
         return _fallback_narrative(stats)
+
+
+def refine_report(stats, narrative, instruction, license_key, directive=None):
+    directive = sanitize_directive(directive)
+    payload = gatekeeper_payload(
+        stats,
+        license_key,
+        {
+            "narrative": str(narrative or "").strip(),
+            "instruction": str(instruction or "").strip(),
+            "directive": directive,
+        },
+    )
+
+    try:
+        response = _post_gatekeeper("/refine", payload)
+        if response.status_code == 403:
+            error = response.json().get("error", "Invalid license key.")
+            raise PermissionError(error)
+        response.raise_for_status()
+        return response.json()
+    except PermissionError:
+        raise
+    except Exception:
+        return {
+            "narrative": _fallback_narrative(stats),
+            "source": "deterministic_refinement",
+            "model": "gpt-4o-mini",
+            "fact_check_locked": True,
+        }
 
 
 def build_daily_frame(df):
@@ -332,7 +380,7 @@ def get_top_3_insights(source):
     )[:3]
 
 
-def analyze_data(csv_source, license_key=""):
+def analyze_data(csv_source, license_key="", directive=None):
     df = read_marketing_csv(csv_source)
 
     total_spend = df["Spend"].sum()
@@ -359,7 +407,8 @@ def analyze_data(csv_source, license_key=""):
         "insights": get_insights(df),
         "top_daily_insights": get_top_3_insights(df),
         "daily_trends": build_daily_trends(df),
-        "narrative": get_ai_narrative(stats, license_key) if license_key else _fallback_narrative(stats),
+        "directive": sanitize_directive(directive),
+        "narrative": get_ai_narrative(stats, license_key, directive=directive) if license_key else _fallback_narrative(stats),
     }
 
 

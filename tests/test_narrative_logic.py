@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from narrative_logic import analyze_data, get_top_3_insights, read_marketing_csv
+from narrative_logic import analyze_data, get_top_3_insights, read_marketing_csv, refine_report
 
 
 def test_analyze_data_returns_expected_sample_stats():
@@ -56,9 +56,56 @@ def test_analyze_data_calls_gatekeeper_with_license(monkeypatch):
     assert captured["url"] == "http://gatekeeper.test/verify-and-generate"
     assert captured["payload"]["license_key"] == "DEMO123"
     assert captured["payload"]["stats"]["total_revenue"] == 13650.0
+    assert captured["payload"]["directive"] == {"tone": "Boardroom", "goal": "Budget Request"}
     assert captured["headers"]["Authorization"].startswith("Bearer ")
     assert len(captured["headers"]["X-Payload-SHA256"]) == 64
     assert result["narrative"] == "Narrative from gatekeeper"
+
+
+def test_refine_report_calls_gatekeeper_with_fact_locked_payload(monkeypatch):
+    captured = {}
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "narrative": "Refined narrative",
+                "model": "gpt-4o-mini",
+                "fact_check_locked": True,
+            }
+
+    def post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["payload"] = json
+        captured["headers"] = headers
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("narrative_logic.requests.post", post)
+
+    result = refine_report(
+        {"total_revenue": 1000, "total_spend": 250, "avg_roas": 4},
+        "Original narrative",
+        "Make it more persuasive",
+        "DEMO123",
+        directive={"tone": "Persuasive", "goal": "Budget Request"},
+    )
+
+    assert captured["url"] == "http://gatekeeper.test/refine"
+    assert captured["payload"]["license_key"] == "DEMO123"
+    assert captured["payload"]["stats"]["total_revenue"] == 1000
+    assert captured["payload"]["narrative"] == "Original narrative"
+    assert captured["payload"]["instruction"] == "Make it more persuasive"
+    assert captured["payload"]["directive"] == {"tone": "Persuasive", "goal": "Budget Request"}
+    assert captured["headers"]["Authorization"].startswith("Bearer ")
+    assert len(captured["headers"]["X-Payload-SHA256"]) == 64
+    assert result["model"] == "gpt-4o-mini"
+    assert result["fact_check_locked"] is True
 
 
 def test_get_top_3_insights_returns_daily_significance():

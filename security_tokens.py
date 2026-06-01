@@ -46,11 +46,14 @@ def payload_hash(payload):
     return hashlib.sha256(canonical_json(payload).encode("utf-8")).hexdigest()
 
 
-def gatekeeper_payload(stats, license_key):
-    return {
+def gatekeeper_payload(stats, license_key, extra=None):
+    payload = {
         "license_key": str(license_key or "").strip(),
         "stats": stats,
     }
+    if extra:
+        payload.update(extra)
+    return payload
 
 
 def create_gatekeeper_jwt(payload, secret=None, ttl_seconds=DEFAULT_TOKEN_TTL_SECONDS):

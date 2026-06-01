@@ -8,7 +8,7 @@ import requests
 from flask import Flask, g, jsonify, render_template, request
 from werkzeug.exceptions import RequestEntityTooLarge
 
-from narrative_logic import analyze_data
+from narrative_logic import analyze_data, refine_report, sanitize_directive
 
 
 BASE_DIR = Path(__file__).parent
@@ -73,7 +73,7 @@ def create_app(test_config=None):
         )
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-        if request.path.startswith("/api/"):
+        if request.path.startswith("/api/") or request.path == "/refine":
             response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -169,12 +169,18 @@ def create_app(test_config=None):
         license_key = request.form.get("license_key", "").strip()
         if not license_key:
             return jsonify({"error": "Enter a valid license key to generate reports."}), 403
+        directive = sanitize_directive(
+            {
+                "tone": request.form.get("tone", ""),
+                "goal": request.form.get("goal", ""),
+            }
+        )
 
         try:
             csv_bytes = uploaded_file.read()
             if not csv_bytes:
                 return jsonify({"error": "CSV file is empty."}), 400
-            return jsonify(analyze_data(io.BytesIO(csv_bytes), license_key=license_key))
+            return jsonify(analyze_data(io.BytesIO(csv_bytes), license_key=license_key, directive=directive))
         except PermissionError as exc:
             return jsonify({"error": str(exc)}), 403
         except Exception as exc:
@@ -183,6 +189,32 @@ def create_app(test_config=None):
         finally:
             uploaded_file.close()
             csv_bytes = b""
+
+    @app.post("/refine")
+    def refine():
+        payload = request.get_json(silent=True) or {}
+        license_key = str(payload.get("license_key", "")).strip()
+        stats = payload.get("stats")
+        narrative = str(payload.get("narrative", "")).strip()
+        instruction = str(payload.get("instruction", "")).strip()
+        directive = sanitize_directive(payload.get("directive"))
+
+        if not license_key:
+            return jsonify({"error": "Enter a valid license key to refine reports."}), 403
+        if not isinstance(stats, dict):
+            return jsonify({"error": "Stats payload must be a JSON object."}), 400
+        if not narrative:
+            return jsonify({"error": "Original narrative is required."}), 400
+        if not instruction:
+            return jsonify({"error": "Refinement instruction is required."}), 400
+
+        try:
+            return jsonify(refine_report(stats, narrative, instruction, license_key, directive=directive))
+        except PermissionError as exc:
+            return jsonify({"error": str(exc)}), 403
+        except Exception as exc:
+            app.logger.exception("Report refinement failed")
+            return jsonify({"error": str(exc), "stability_notice": STABILITY_NOTICE}), 400
 
     return app
 
