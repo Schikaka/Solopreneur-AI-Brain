@@ -169,7 +169,7 @@
 
       .settings-tabs {
         display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
+        grid-template-columns: repeat(4, minmax(0, 1fr));
         gap: 6px;
         padding: 16px 16px 0;
       }
@@ -204,10 +204,20 @@
         gap: 8px;
       }
 
+      .field + .field {
+        margin-top: 16px;
+      }
+
       label {
         color: var(--muted);
         font-size: 13px;
         font-weight: 800;
+      }
+
+      .field-note {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.45;
       }
 
       .logo-input {
@@ -577,6 +587,7 @@
           <div class="settings-tabs" role="tablist" aria-label="Workspace settings">
             <button class="settings-tab" id="branding-tab" type="button" role="tab" aria-selected="true" aria-controls="branding-panel">Branding</button>
             <button class="settings-tab" id="access-tab" type="button" role="tab" aria-selected="false" aria-controls="access-panel">Access</button>
+            <button class="settings-tab" id="payment-tab" type="button" role="tab" aria-selected="false" aria-controls="payment-panel">Payment</button>
             <button class="settings-tab" id="audit-tab" type="button" role="tab" aria-selected="false" aria-controls="audit-panel">Audit</button>
           </div>
 
@@ -618,6 +629,19 @@
             <div class="admin-status" id="access-status" role="status" aria-live="polite"></div>
           </div>
 
+          <div class="settings-panel" id="payment-panel" role="tabpanel" aria-labelledby="payment-tab" hidden>
+            <div class="field">
+              <label for="stripe-payment-link">Stripe Payment Link</label>
+              <input class="license-input" id="stripe-payment-link" type="url" placeholder="https://buy.stripe.com/..." autocomplete="off" spellcheck="false" inputmode="url">
+              <p class="field-note">This link powers the Upgrade to Elite button shown to visitors without a saved license key.</p>
+            </div>
+            <div class="actions">
+              <button class="button" id="save-payment-link" type="button">Save Payment Link</button>
+              <button class="button secondary" id="clear-payment-link" type="button">Clear</button>
+            </div>
+            <div class="admin-status" id="payment-status" role="status" aria-live="polite"></div>
+          </div>
+
           <div class="settings-panel" id="audit-panel" role="tabpanel" aria-labelledby="audit-tab" hidden>
             <div class="audit-panel-head">
               <h2>Generated Reports</h2>
@@ -642,6 +666,10 @@
             <div class="status-row">
               <dt>Gatekeeper</dt>
               <dd class="ready">Configured</dd>
+            </div>
+            <div class="status-row">
+              <dt>Payment Link</dt>
+              <dd id="payment-state">Checking</dd>
             </div>
             <div class="status-row">
               <dt>Audit</dt>
@@ -687,6 +715,11 @@
       const clearAccessButton = document.querySelector("#clear-access");
       const accessStatus = document.querySelector("#access-status");
       const accessState = document.querySelector("#access-state");
+      const stripePaymentInput = document.querySelector("#stripe-payment-link");
+      const savePaymentLinkButton = document.querySelector("#save-payment-link");
+      const clearPaymentLinkButton = document.querySelector("#clear-payment-link");
+      const paymentStatus = document.querySelector("#payment-status");
+      const paymentState = document.querySelector("#payment-state");
       const auditState = document.querySelector("#audit-state");
       const auditList = document.querySelector("#audit-list");
       const auditStatus = document.querySelector("#audit-status");
@@ -705,6 +738,7 @@
       const historyStoreName = "reports";
       const gatekeeperAuditBase = {{ gatekeeper_url|tojson }};
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
+      let stripePaymentLink = "";
       let historyDbPromise = null;
 
       const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({
@@ -723,10 +757,75 @@
       function updateSummary() {
         const hasLicense = Boolean((localStorage.getItem(licenseStorageKey) || "").trim());
         const hasLogo = Boolean(localStorage.getItem(logoStorageKey));
+        const hasPaymentLink = Boolean(stripePaymentLink);
         accessState.textContent = hasLicense ? "Protected" : "Needs setup";
         accessState.className = hasLicense ? "ready" : "pending";
         brandingState.textContent = hasLogo ? "Logo ready" : "Default brand";
         brandingState.className = hasLogo ? "ready" : "pending";
+        paymentState.textContent = hasPaymentLink ? "Upgrade ready" : "Missing link";
+        paymentState.className = hasPaymentLink ? "ready" : "pending";
+      }
+
+      function isHttpsUrl(value) {
+        if (!value) {
+          return true;
+        }
+        try {
+          const parsed = new URL(value);
+          return parsed.protocol === "https:" && Boolean(parsed.hostname);
+        } catch (error) {
+          return false;
+        }
+      }
+
+      function applyBusinessSettings(settings = {}) {
+        stripePaymentLink = String(settings.stripe_payment_link || "").trim();
+        stripePaymentInput.value = stripePaymentLink;
+        updateSummary();
+      }
+
+      async function loadBusinessSettings() {
+        try {
+          const response = await fetch("/api/business-settings");
+          const data = await response.json();
+          applyBusinessSettings(data.settings || {});
+          if (!response.ok) {
+            setStatus(paymentStatus, "Payment settings are unavailable.", "error");
+          }
+          return data;
+        } catch (error) {
+          applyBusinessSettings({});
+          setStatus(paymentStatus, "Payment settings are unavailable.", "error");
+          return null;
+        }
+      }
+
+      async function saveBusinessSettings(linkValue) {
+        const normalizedLink = String(linkValue || "").trim();
+        if (!isHttpsUrl(normalizedLink)) {
+          setStatus(paymentStatus, "Use a secure https Stripe Payment Link.", "error");
+          return;
+        }
+
+        savePaymentLinkButton.disabled = true;
+        setStatus(paymentStatus, "Saving payment link...");
+        try {
+          const response = await fetch("/api/business-settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ stripe_payment_link: normalizedLink })
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.error || "Payment link could not be saved.");
+          }
+          applyBusinessSettings(data.settings || {});
+          setStatus(paymentStatus, normalizedLink ? "Payment link saved." : "Payment link cleared.", "success");
+        } catch (error) {
+          setStatus(paymentStatus, error.message || "Payment link could not be saved.", "error");
+        } finally {
+          savePaymentLinkButton.disabled = false;
+        }
       }
 
       function openHistoryVault() {
@@ -1016,11 +1115,21 @@
         setStatus(accessStatus, "Access cleared.", "success");
       });
 
+      savePaymentLinkButton.addEventListener("click", () => {
+        saveBusinessSettings(stripePaymentInput.value);
+      });
+
+      clearPaymentLinkButton.addEventListener("click", () => {
+        stripePaymentInput.value = "";
+        saveBusinessSettings("");
+      });
+
       refreshAuditButton.addEventListener("click", () => refreshAuditList());
       refreshComplianceButton.addEventListener("click", () => refreshComplianceHealth());
 
       updateLogoPreview();
       updateSummary();
+      loadBusinessSettings();
       refreshAuditList();
       refreshComplianceHealth();
       warmSampleReportCache();

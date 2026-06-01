@@ -1,0 +1,47 @@
+Build a professional SaaS landing page for NarrativeAI, a privacy-first AI reporting assistant for boutique marketing agencies.
+
+This prompt is intended for the Emergent App Builder.
+
+Goal:
+Convert agency owners and account directors into first paid customers or demo bookings.
+
+Audience:
+Boutique agencies with 5-30 employees that manage paid media, SEO, lifecycle marketing, or performance reporting for multiple clients.
+
+Positioning:
+NarrativeAI turns marketing CSV exports into boardroom-ready client report narratives in under a minute. It is not another dashboard. It is the missing narrative layer between raw campaign data and client communication.
+
+Hero:
+Headline: Client-ready marketing report narratives in 60 seconds.
+Subheadline: Upload a CSV, choose the strategic goal, and generate a polished executive summary your agency can send to clients the same day.
+Primary CTA: Upgrade to Elite
+Secondary CTA: Watch 60-second demo
+
+Visual direction:
+Use a clean B2B SaaS style with a calm white and light-blue interface, sharp typography, professional spacing, and a product-first hero showing a report builder UI. Avoid cartoon illustrations. Make the first viewport clearly show NarrativeAI as the product.
+
+Core sections:
+1. Problem section: agencies already have the numbers, but account managers still spend hours writing the explanation.
+2. Workflow section: upload CSV, select directive, generate narrative, refine, save locally.
+3. Privacy section: raw CSVs are processed in memory, reports can be saved in the browser's Local History Vault, and client data stays under agency control.
+4. Output section: three executive insights, achievement-based framing, boardroom narrative, fact-checked recommendations.
+5. Use cases: monthly client reports, pre-call performance summaries, budget request narratives, retention updates.
+6. Pricing section: Elite agency tier at $49/month.
+7. Final CTA: Start with your next client report.
+
+Trust messages:
+- Built for agencies that need faster reporting, not another analytics dashboard.
+- CSV-first workflow with no heavy integrations required.
+- Fact-Check Lock keeps source numbers unchanged during refinement.
+- Local History Vault keeps saved reports on the user's machine.
+
+Tone:
+Authoritative, practical, direct, and commercially sharp. Avoid hype. Speak to agency owners who care about time savings, client retention, and operational leverage.
+
+Required page elements:
+- Sticky top navigation with logo, Product, Privacy, Pricing, Demo, and CTA.
+- Hero with product UI preview.
+- Mobile responsive layout.
+- CTA buttons that can point to a Stripe Payment Link.
+- FAQ with answers about CSV uploads, privacy, data storage, and who the product is for.
+- Footer with NarrativeAI, privacy-first reporting, and contact/demo links.

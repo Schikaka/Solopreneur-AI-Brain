@@ -204,6 +204,22 @@ def test_check_updates_route_reports_premium_update(monkeypatch):
     assert payload["message"] == "A premium update is available."
 
 
+def test_business_settings_store_stripe_payment_link():
+    client = create_app().test_client()
+    payment_link = "https://buy.stripe.com/test_elite"
+
+    save_response = client.post("/admin/business-settings", json={"stripe_payment_link": payment_link})
+    get_response = client.get("/admin/business-settings")
+    invalid_response = client.post("/admin/business-settings", json={"stripe_payment_link": "http://insecure.test"})
+
+    assert save_response.status_code == 200
+    assert save_response.get_json()["settings"]["stripe_payment_link"] == payment_link
+    assert get_response.status_code == 200
+    assert get_response.get_json()["settings"]["stripe_payment_link"] == payment_link
+    assert invalid_response.status_code == 400
+    assert "https" in invalid_response.get_json()["error"]
+
+
 def test_honeypot_blacklists_ip_and_blocks_followup(capsys):
     gatekeeper_server.HONEYPOT_BLACKLIST.clear()
     client = create_app().test_client()

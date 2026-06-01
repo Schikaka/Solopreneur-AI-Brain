@@ -1101,6 +1101,30 @@
         font-weight: 750;
       }
 
+      .upgrade-link {
+        display: inline-flex;
+        min-height: 42px;
+        align-items: center;
+        justify-content: center;
+        padding: 0 14px;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1e3a8a;
+        font-size: 14px;
+        font-weight: 850;
+        text-decoration: none;
+      }
+
+      .upgrade-link:hover {
+        border-color: #93c5fd;
+        background: #dbeafe;
+      }
+
+      .upgrade-link[hidden] {
+        display: none;
+      }
+
       .update-toast {
         position: fixed;
         top: 18px;
@@ -1364,6 +1388,7 @@
           <label for="startup-license-key">License Key</label>
           <input id="startup-license-key" type="password" autocomplete="off" spellcheck="false" aria-label="License key">
           <button class="button" id="startup-license-button" type="submit">Unlock</button>
+          <a class="upgrade-link" id="upgrade-link" href="#" target="_blank" rel="noopener" hidden>Upgrade to Elite</a>
           <div class="license-status" id="license-status" role="status" aria-live="polite"></div>
         </form>
       </div>
@@ -1540,10 +1565,12 @@
     <script nonce="{{ csp_nonce }}">
       const report = document.querySelector("#report");
       const appVersion = {{ app_version|tojson }};
+      const initialStripePaymentLink = {{ stripe_payment_link|tojson }};
       const licenseSplash = document.querySelector("#license-splash");
       const startupLicenseForm = document.querySelector("#license-form");
       const startupLicenseInput = document.querySelector("#startup-license-key");
       const licenseStatus = document.querySelector("#license-status");
+      const upgradeLink = document.querySelector("#upgrade-link");
       const updateToast = document.querySelector("#update-toast");
       const form = document.querySelector("#upload-form");
       const csvFileInput = document.querySelector("#csv-file");
@@ -1586,6 +1613,7 @@
       let currentReportData = null;
       let currentReportDirective = { tone: "Boardroom", goal: "Budget Request" };
       let agencyLogoDataUrl = localStorage.getItem(logoStorageKey) || "";
+      let stripePaymentLink = String(initialStripePaymentLink || "").trim();
       let historyDbPromise = null;
       let dashboardStarted = false;
 
@@ -1804,6 +1832,27 @@
 
       function getLicenseKey() {
         return (localStorage.getItem(licenseStorageKey) || "").trim();
+      }
+
+      function applyStripePaymentLink(linkValue = "") {
+        stripePaymentLink = String(linkValue || "").trim();
+        if (stripePaymentLink) {
+          upgradeLink.href = stripePaymentLink;
+          upgradeLink.hidden = false;
+          return;
+        }
+        upgradeLink.hidden = true;
+        upgradeLink.removeAttribute("href");
+      }
+
+      async function loadBusinessSettings() {
+        applyStripePaymentLink(stripePaymentLink);
+        try {
+          const { data } = await fetchJsonWithTimeout("/api/business-settings", { timeoutMs: 2500 });
+          applyStripePaymentLink(data?.settings?.stripe_payment_link || "");
+        } catch (error) {
+          applyStripePaymentLink(stripePaymentLink);
+        }
       }
 
       function showLicenseSplash(message = "") {
@@ -2845,6 +2894,7 @@
         updateDirectivePanel();
         syncDrawerMode();
         refreshSystemStatus();
+        loadBusinessSettings();
         checkForUpdates();
         window.setInterval(refreshSystemStatus, heartbeatIntervalMs);
 

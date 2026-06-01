@@ -10,6 +10,7 @@ import uuid
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import urlparse
 
 import requests
 from dotenv import load_dotenv
@@ -599,6 +600,92 @@ class AuditReportStore:
             "anomaly_details_json",
         )
         return dict(zip(keys, row))
+
+
+BUSINESS_SETTING_KEYS = ("stripe_payment_link",)
+
+
+def _normalize_payment_link(value):
+    normalized = str(value or "").strip()
+    if not normalized:
+        return ""
+
+    parsed = urlparse(normalized)
+    if parsed.scheme != "https" or not parsed.netloc:
+        raise ValueError("Stripe Payment Link must be a secure https URL.")
+
+    return normalized
+
+
+class BusinessSettingsStore:
+    def __init__(self, license_store):
+        self.license_store = license_store
+
+    def ensure_initialized(self):
+        self.license_store.ensure_initialized()
+        with self.license_store.connect() as connection:
+            connection.execute(
+                """
+                CREATE TABLE IF NOT EXISTS business_settings (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at TEXT NOT NULL
+                )
+                """
+            )
+            connection.commit()
+
+    def defaults(self):
+        try:
+            stripe_payment_link = _normalize_payment_link(os.getenv("STRIPE_PAYMENT_LINK", ""))
+        except ValueError:
+            stripe_payment_link = ""
+        return {
+            "stripe_payment_link": stripe_payment_link,
+        }
+
+    def get_all(self):
+        self.ensure_initialized()
+        settings = self.defaults()
+        with self.license_store.connect() as connection:
+            rows = connection.execute(
+                f"""
+                SELECT key, value
+                FROM business_settings
+                WHERE key IN ({",".join("?" for _ in BUSINESS_SETTING_KEYS)})
+                """,
+                BUSINESS_SETTING_KEYS,
+            ).fetchall()
+
+        for key, value in rows:
+            if key in settings:
+                settings[key] = value
+        return settings
+
+    def save(self, settings):
+        self.ensure_initialized()
+        normalized_settings = {}
+        if "stripe_payment_link" in settings:
+            normalized_settings["stripe_payment_link"] = _normalize_payment_link(settings.get("stripe_payment_link"))
+
+        if not normalized_settings:
+            return self.get_all()
+
+        updated_at = datetime.now(timezone.utc).isoformat()
+        with self.license_store.connect() as connection:
+            for key, value in normalized_settings.items():
+                connection.execute(
+                    """
+                    INSERT INTO business_settings (key, value, updated_at)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(key) DO UPDATE SET
+                        value = excluded.value,
+                        updated_at = excluded.updated_at
+                    """,
+                    (key, value, updated_at),
+                )
+            connection.commit()
+        return self.get_all()
 
 
 def _extract_client_ip():
@@ -1629,7 +1716,9 @@ def create_app():
     limiter = _configure_rate_limiting(app)
     license_store = LicenseStore()
     audit_store = AuditReportStore(license_store)
+    business_settings_store = BusinessSettingsStore(license_store)
     startup_security_scan = run_startup_validation(license_store=license_store)
+    business_settings_store.ensure_initialized()
     app.config["COMPLIANCE_HEALTH"] = startup_security_scan
 
     @app.before_request
@@ -1698,6 +1787,29 @@ def create_app():
                 "message": "A premium update is available." if update_available else "",
             }
         )
+
+    @app.get("/admin/business-settings")
+    def admin_business_settings():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Business settings access is restricted."}), 403
+        return jsonify({"ok": True, "settings": business_settings_store.get_all()})
+
+    @app.post("/admin/business-settings")
+    def save_admin_business_settings():
+        if not _admin_audit_allowed():
+            return jsonify({"error": "Business settings access is restricted."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        try:
+            settings = business_settings_store.save(
+                {
+                    "stripe_payment_link": payload.get("stripe_payment_link", ""),
+                }
+            )
+        except ValueError as exc:
+            return jsonify({"error": str(exc)}), 400
+
+        return jsonify({"ok": True, "settings": settings})
 
     @app.get("/admin/compliance-health")
     def admin_compliance_health():

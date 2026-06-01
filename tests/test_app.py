@@ -1,4 +1,5 @@
 from io import BytesIO
+from pathlib import Path
 
 import pytest
 
@@ -45,6 +46,9 @@ def test_admin_page(client):
 
     assert response.status_code == 200
     assert b"Workspace Admin" in response.data
+    assert b"Stripe Payment Link" in response.data
+    assert b"/api/business-settings" in response.data
+    assert b"Payment Link" in response.data
     assert b"Audit" in response.data
     assert b"View Audit" in response.data
     assert b"Security & Compliance Health" in response.data
@@ -76,6 +80,9 @@ def test_index_has_nonce_csp(client):
     assert b"appVersion" in response.data
     assert b"license-splash" in response.data
     assert b"startup-license-key" in response.data
+    assert b"initialStripePaymentLink" in response.data
+    assert b"Upgrade to Elite" in response.data
+    assert b"/api/business-settings" in response.data
     assert b"A premium update is available." in response.data
     assert b"renderReportSkeleton" in response.data
     assert b"skeleton-stage-stats" in response.data
@@ -170,6 +177,47 @@ def test_compliance_health_proxy(client, monkeypatch):
     assert payload["checks"]["sast_scan"]["status"] == "passed"
 
 
+def test_business_settings_proxy_get_and_post(client, monkeypatch):
+    class GetResponse:
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True, "settings": {"stripe_payment_link": "https://buy.stripe.com/test"}}
+
+    class PostResponse:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {"ok": True, "settings": {"stripe_payment_link": "https://buy.stripe.com/new"}}
+
+    def get(url, timeout):
+        assert url == "http://gatekeeper.test/admin/business-settings"
+        assert timeout == 1.5
+        return GetResponse()
+
+    def post(url, json, timeout):
+        assert url == "http://gatekeeper.test/admin/business-settings"
+        assert json == {"stripe_payment_link": "https://buy.stripe.com/new"}
+        assert timeout == 1.5
+        return PostResponse()
+
+    monkeypatch.setenv("GATEKEEPER_URL", "http://gatekeeper.test")
+    monkeypatch.setattr("app.requests.get", get)
+    monkeypatch.setattr("app.requests.post", post)
+
+    get_response = client.get("/api/business-settings")
+    post_response = client.post("/api/business-settings", json={"stripe_payment_link": "https://buy.stripe.com/new"})
+
+    assert get_response.status_code == 200
+    assert get_response.get_json()["settings"]["stripe_payment_link"] == "https://buy.stripe.com/test"
+    assert post_response.status_code == 200
+    assert post_response.get_json()["settings"]["stripe_payment_link"] == "https://buy.stripe.com/new"
+
+
 def test_check_updates_proxy(client, monkeypatch):
     class Response:
         def raise_for_status(self):
@@ -215,6 +263,20 @@ def test_build_dist_uses_windowed_pyinstaller_bundle():
     assert "templates" in joined
     assert "static" in joined
     assert "dummy_marketing_data.csv" in joined
+
+
+def test_launch_assets_exist():
+    root = Path(__file__).resolve().parents[1]
+    launch_assets = root / "logic" / "launch_assets.md"
+    landing_prompt = root / "landing_page_prompt.txt"
+
+    assert (root / "launch_assets" / "linkedin_scripts.md").exists()
+    assert (root / "launch_assets" / "twitter_hooks.md").exists()
+    assert (root / "launch_assets" / "demo_script.md").exists()
+    assert "Elite AGENCY Hook" in launch_assets.read_text()
+    assert "Privacy-First" in launch_assets.read_text()
+    assert "60-Second Demo Script" in launch_assets.read_text()
+    assert "Emergent App Builder" in landing_prompt.read_text()
 
 
 def test_sample_report(client):

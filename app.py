@@ -36,6 +36,14 @@ def _env_int(name, default):
         return int(default)
 
 
+def _gatekeeper_url():
+    return os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+
+
+def _default_business_settings():
+    return {"stripe_payment_link": os.getenv("STRIPE_PAYMENT_LINK", "").strip()}
+
+
 def create_app(test_config=None):
     app = Flask(
         __name__,
@@ -135,19 +143,58 @@ def create_app(test_config=None):
 
     @app.route("/")
     def index():
-        return render_template("index.html", app_version=app.config["APP_VERSION"])
+        return render_template(
+            "index.html",
+            app_version=app.config["APP_VERSION"],
+            stripe_payment_link=_default_business_settings()["stripe_payment_link"],
+        )
 
     @app.route("/admin")
     def admin():
-        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
+        gatekeeper_url = _gatekeeper_url()
         return render_template("admin.html", gatekeeper_url=gatekeeper_url)
+
+    @app.get("/api/business-settings")
+    def business_settings():
+        try:
+            response = requests.get(f"{_gatekeeper_url()}/admin/business-settings", timeout=1.5)
+            response.raise_for_status()
+            return jsonify(response.json())
+        except Exception:
+            return jsonify(
+                {
+                    "ok": False,
+                    "settings": _default_business_settings(),
+                    "error": "Business settings are unavailable.",
+                }
+            ), 503
+
+    @app.post("/api/business-settings")
+    def save_business_settings():
+        payload = request.get_json(silent=True) or {}
+        try:
+            response = requests.post(
+                f"{_gatekeeper_url()}/admin/business-settings",
+                json={"stripe_payment_link": str(payload.get("stripe_payment_link", "")).strip()},
+                timeout=1.5,
+            )
+            response.raise_for_status()
+            return jsonify(response.json())
+        except requests.HTTPError:
+            error_payload = {}
+            try:
+                error_payload = response.json()
+            except Exception:
+                error_payload = {"error": "Business settings could not be saved."}
+            return jsonify(error_payload), response.status_code
+        except Exception:
+            return jsonify({"error": "Business settings could not be saved."}), 503
 
     @app.post("/api/check-updates")
     def check_updates():
-        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
         payload = {"current_version": app.config["APP_VERSION"]}
         try:
-            response = requests.post(f"{gatekeeper_url}/check-updates", json=payload, timeout=1.5)
+            response = requests.post(f"{_gatekeeper_url()}/check-updates", json=payload, timeout=1.5)
             response.raise_for_status()
             return jsonify(response.json())
         except Exception:
@@ -162,9 +209,8 @@ def create_app(test_config=None):
 
     @app.get("/api/compliance-health")
     def compliance_health():
-        gatekeeper_url = os.getenv("GATEKEEPER_URL", "http://localhost:5001").rstrip("/")
         try:
-            response = requests.get(f"{gatekeeper_url}/admin/compliance-health", timeout=1.5)
+            response = requests.get(f"{_gatekeeper_url()}/admin/compliance-health", timeout=1.5)
             response.raise_for_status()
             return jsonify(response.json())
         except Exception:

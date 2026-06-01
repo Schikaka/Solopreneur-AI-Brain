@@ -38,3 +38,16 @@ Once there are 5 paying users, add:
 1. Direct Google Ads integration.
 2. Multi-language report generation.
 3. Custom brand voice per agency.
+
+## 6. "First 5" Outreach Log
+
+| Prospect | Segment | Channel | Offer | Status | Next Step |
+| --- | --- | --- | --- | --- | --- |
+| Agency Owner 1 | Boutique paid media agency | LinkedIn | 60-second demo | Not contacted | Send Elite AGENCY Hook |
+| Agency Owner 2 | SEO and content agency | LinkedIn | Privacy-first reporting workflow | Not contacted | Personalize around monthly reporting |
+| Agency Owner 3 | Lifecycle marketing agency | Twitter/X | CSV-to-narrative demo | Not contacted | Reply to reporting operations post |
+| Agency Owner 4 | Performance marketing consultant | LinkedIn | First report generated live | Not contacted | Offer free sample report |
+| Agency Owner 5 | Small full-service agency | Direct email | $49/month Elite pilot | Not contacted | Send short demo and checkout link |
+
+Launch target: secure the first 5 agency conversations, then convert the best-fit
+prospects into paid Elite users with the Stripe Payment Link.
