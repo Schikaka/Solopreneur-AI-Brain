@@ -21,8 +21,11 @@
         --slate: #334155;
         --teal: #0f766e;
         --amber: #b45309;
-        --green: #15803d;
+        --green: #166534;
         --shadow: 0 18px 45px rgba(20, 32, 55, 0.08);
+        --hover-shadow: 0 22px 52px rgba(20, 32, 55, 0.13);
+        --focus-ring: 0 0 0 4px rgba(37, 99, 235, 0.22);
+        --ease: 0.2s ease-in-out;
       }
 
       * {
@@ -45,6 +48,29 @@
         font: inherit;
       }
 
+      button,
+      input,
+      select,
+      a {
+        transition:
+          border-color var(--ease),
+          background-color var(--ease),
+          box-shadow var(--ease),
+          color var(--ease),
+          filter var(--ease),
+          opacity var(--ease),
+          transform var(--ease);
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible,
+      a:focus-visible {
+        outline: 3px solid rgba(37, 99, 235, 0.86);
+        outline-offset: 3px;
+        box-shadow: var(--focus-ring);
+      }
+
       .shell {
         width: min(1180px, calc(100% - 32px));
         margin: 0 auto;
@@ -57,6 +83,13 @@
         justify-content: space-between;
         gap: 16px;
         margin-bottom: 28px;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 0;
       }
 
       .brand {
@@ -135,6 +168,38 @@
         text-decoration: none;
       }
 
+      .mobile-menu-button,
+      .drawer-close {
+        display: none;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        color: var(--slate);
+        cursor: pointer;
+      }
+
+      .mobile-menu-button svg,
+      .drawer-close svg {
+        width: 18px;
+        height: 18px;
+        stroke-width: 2.4;
+      }
+
+      .drawer-header {
+        display: none;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .drawer-header strong {
+        font-size: 14px;
+      }
+
       .admin-link:hover {
         border-color: #94a3b8;
         background: #f8fafc;
@@ -145,6 +210,11 @@
         height: 8px;
         border-radius: 50%;
         background: var(--green);
+      }
+
+      .status.is-ready .dot {
+        background: #166534;
+        box-shadow: 0 0 0 2px rgba(22, 101, 52, 0.18);
       }
 
       .status.is-degraded .dot {
@@ -173,6 +243,10 @@
         border-radius: 8px;
         background: var(--surface);
         box-shadow: var(--shadow);
+        transition:
+          border-color var(--ease),
+          box-shadow var(--ease),
+          transform var(--ease);
       }
 
       .panel {
@@ -248,6 +322,10 @@
         border: 1px solid var(--line);
         border-radius: 8px;
         background: #fbfcff;
+        transition:
+          border-color var(--ease),
+          box-shadow var(--ease),
+          transform var(--ease);
       }
 
       .history-entry strong,
@@ -413,6 +491,10 @@
         gap: 18px;
       }
 
+      .report[aria-busy="true"] {
+        cursor: progress;
+      }
+
       .metrics {
         display: grid;
         grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -443,6 +525,10 @@
         border-radius: 8px;
         background: var(--surface);
         box-shadow: var(--shadow);
+        transition:
+          border-color var(--ease),
+          box-shadow var(--ease),
+          transform var(--ease);
       }
 
       .section-head {
@@ -535,6 +621,14 @@
         outline: none;
       }
 
+      .refinement-chat input:focus-visible,
+      .directive-field select:focus-visible,
+      .file-input:focus-visible {
+        outline: 3px solid rgba(37, 99, 235, 0.86);
+        outline-offset: 3px;
+        box-shadow: var(--focus-ring);
+      }
+
       .refinement-status {
         min-height: 20px;
         color: var(--muted);
@@ -596,6 +690,10 @@
         border-radius: 8px;
         background: var(--surface);
         box-shadow: var(--shadow);
+        transition:
+          border-color var(--ease),
+          box-shadow var(--ease),
+          transform var(--ease);
       }
 
       .report-branding h2 {
@@ -633,11 +731,22 @@
 
       .bar-row {
         display: grid;
-        grid-template-columns: 96px 1fr 74px;
+        grid-template-columns: minmax(72px, 0.22fr) minmax(140px, 1fr) minmax(72px, auto);
         align-items: center;
         gap: 12px;
         color: var(--muted);
         font-size: 13px;
+        min-width: 0;
+      }
+
+      .bar-row span,
+      .bar-row strong {
+        min-width: 0;
+      }
+
+      .bar-row strong {
+        justify-self: end;
+        white-space: nowrap;
       }
 
       .bar-track {
@@ -652,6 +761,7 @@
         min-width: 4px;
         border-radius: inherit;
         background: linear-gradient(90deg, var(--blue), var(--teal));
+        transition: width var(--ease);
       }
 
       .empty {
@@ -685,8 +795,26 @@
         position: absolute;
         inset: 0;
         transform: translateX(-100%);
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.72), transparent);
+        background: linear-gradient(
+          90deg,
+          rgba(226, 232, 240, 0) 0%,
+          rgba(255, 255, 255, 0.92) 50%,
+          rgba(226, 232, 240, 0) 100%
+        );
         animation: skeleton-shimmer 1.35s infinite;
+        animation-delay: var(--skeleton-delay, 0s);
+      }
+
+      .skeleton-stage-stats {
+        --skeleton-delay: 0s;
+      }
+
+      .skeleton-stage-chart {
+        --skeleton-delay: 0.14s;
+      }
+
+      .skeleton-stage-narrative {
+        --skeleton-delay: 0.28s;
       }
 
       .skeleton-report-source {
@@ -808,6 +936,10 @@
         font-size: 14px;
         font-weight: 750;
         overflow-wrap: anywhere;
+        transition:
+          border-color var(--ease),
+          box-shadow var(--ease),
+          transform var(--ease);
       }
 
       .privacy-footer {
@@ -891,14 +1023,140 @@
         line-height: 1;
       }
 
+      .drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 25;
+        background: rgba(15, 23, 42, 0.42);
+        opacity: 1;
+        transition: opacity var(--ease);
+      }
+
+      .drawer-backdrop[hidden] {
+        display: none;
+      }
+
+      @media (hover: hover) and (pointer: fine) {
+        .admin-link:hover,
+        .mobile-menu-button:hover,
+        .drawer-close:hover,
+        .button:hover,
+        .copy-button:hover,
+        .privacy-badge:hover,
+        .modal-close:hover,
+        .sidebar-tab:hover {
+          transform: translateY(-1px);
+        }
+
+        .panel:hover,
+        .metric:hover,
+        .section:hover,
+        .history-entry:hover,
+        .report-branding:hover,
+        .report-source:hover {
+          box-shadow: var(--hover-shadow);
+          transform: translateY(-1px);
+        }
+
+        .insight:hover {
+          border-color: #cbd5e1;
+          box-shadow: 0 14px 34px rgba(20, 32, 55, 0.08);
+          transform: translateY(-1px);
+        }
+      }
+
       @media (max-width: 900px) {
+        .metrics,
+        .insights {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 767px) {
+        body.drawer-open {
+          overflow: hidden;
+        }
+
+        .shell {
+          width: min(100% - 20px, 1180px);
+        }
+
+        .topbar {
+          align-items: center;
+          margin-bottom: 18px;
+        }
+
+        .brand-row {
+          flex: 1 1 auto;
+        }
+
+        .brand span {
+          white-space: nowrap;
+        }
+
+        .mobile-menu-button,
+        .drawer-close {
+          display: grid;
+          flex: 0 0 auto;
+        }
+
+        .drawer-header {
+          display: flex;
+        }
+
+        .top-actions {
+          gap: 8px;
+        }
+
+        .admin-link {
+          min-height: 36px;
+          padding: 0 10px;
+        }
+
+        .status {
+          max-width: 42vw;
+          padding: 0 10px;
+        }
+
+        #system-status-text {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
         .workspace {
           grid-template-columns: 1fr;
         }
 
-        .metrics,
-        .insights {
-          grid-template-columns: repeat(2, minmax(0, 1fr));
+        .sidebar-drawer {
+          position: fixed;
+          inset: 0 auto 0 0;
+          z-index: 30;
+          width: min(360px, calc(100vw - 40px));
+          height: 100vh;
+          padding: 16px;
+          overflow-y: auto;
+          border-radius: 0 8px 8px 0;
+          box-shadow: 24px 0 70px rgba(15, 23, 42, 0.22);
+          opacity: 0;
+          pointer-events: none;
+          transform: translateX(-108%);
+          visibility: hidden;
+          transition:
+            opacity var(--ease),
+            transform var(--ease),
+            visibility 0s linear 0.2s;
+        }
+
+        .sidebar-drawer.is-open {
+          opacity: 1;
+          pointer-events: auto;
+          transform: translateX(0);
+          visibility: visible;
+          transition:
+            opacity var(--ease),
+            transform var(--ease),
+            visibility 0s;
         }
       }
 
@@ -908,14 +1166,8 @@
           padding-top: 16px;
         }
 
-        .topbar,
         .report-branding,
         .section-head {
-          align-items: flex-start;
-          flex-direction: column;
-        }
-
-        .top-actions {
           align-items: flex-start;
           flex-direction: column;
         }
@@ -929,12 +1181,78 @@
         }
 
         .bar-row {
-          grid-template-columns: 74px 1fr 60px;
+          grid-template-columns: minmax(54px, 0.28fr) minmax(88px, 1fr) minmax(58px, auto);
           gap: 8px;
+          font-size: 12px;
         }
 
         .report-title {
           text-align: left;
+        }
+      }
+
+      @media (max-width: 420px) {
+        .topbar {
+          gap: 10px;
+        }
+
+        .mark {
+          width: 32px;
+          height: 32px;
+        }
+
+        .brand {
+          gap: 8px;
+        }
+
+        .brand span {
+          max-width: 108px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        .top-actions {
+          gap: 6px;
+        }
+
+        .admin-link {
+          font-size: 12px;
+        }
+
+        .status {
+          max-width: 38vw;
+          font-size: 12px;
+        }
+
+        .section,
+        .metric,
+        .insight {
+          padding: 14px;
+        }
+
+        .bar-row {
+          grid-template-columns: 1fr;
+          align-items: stretch;
+        }
+
+        .bar-row strong {
+          justify-self: start;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition-duration: 0.01ms !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+        }
+
+        .skeleton-block::after,
+        .skeleton-card::after {
+          animation: none;
         }
       }
     </style>
@@ -942,13 +1260,22 @@
   <body>
     <main class="shell">
       <header class="topbar">
-        <div class="brand">
-          <div class="mark" aria-hidden="true">N</div>
-          <span>NarrativeAI</span>
+        <div class="brand-row">
+          <button class="mobile-menu-button" id="mobile-menu-button" type="button" aria-label="Open report workspace" aria-controls="builder-drawer" aria-expanded="false">
+            <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round">
+              <path d="M4 7h16"></path>
+              <path d="M4 12h16"></path>
+              <path d="M4 17h16"></path>
+            </svg>
+          </button>
+          <div class="brand">
+            <div class="mark" aria-hidden="true">N</div>
+            <span>NarrativeAI</span>
+          </div>
         </div>
         <div class="top-actions">
-          <a class="admin-link" href="/admin">Admin</a>
-          <div class="status is-checking" id="system-status" aria-live="polite">
+          <a class="admin-link" href="/admin" aria-label="Open workspace admin">Admin</a>
+          <div class="status is-checking" id="system-status" role="status" aria-label="System heartbeat status" aria-live="polite">
             <span class="dot" aria-hidden="true"></span>
             <span id="system-status-text">System Checking</span>
           </div>
@@ -956,10 +1283,19 @@
       </header>
 
       <div class="workspace">
-        <aside class="panel">
+        <aside class="panel sidebar-drawer sm:hidden" id="builder-drawer" aria-label="Report workspace" aria-hidden="false">
+          <div class="drawer-header">
+            <strong>Workspace</strong>
+            <button class="drawer-close" id="drawer-close" type="button" aria-label="Close report workspace">
+              <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round">
+                <path d="M6 6l12 12"></path>
+                <path d="M18 6L6 18"></path>
+              </svg>
+            </button>
+          </div>
           <div class="sidebar-tabs" role="tablist" aria-label="Report workspace">
-            <button class="sidebar-tab is-active" id="builder-tab" type="button" role="tab" aria-selected="true" aria-controls="builder-panel" data-sidebar-tab="builder">Builder</button>
-            <button class="sidebar-tab" id="history-tab" type="button" role="tab" aria-selected="false" aria-controls="history-panel" data-sidebar-tab="history">Past Reports</button>
+            <button class="sidebar-tab is-active" id="builder-tab" type="button" role="tab" aria-label="Open report builder tab" aria-selected="true" aria-controls="builder-panel" data-sidebar-tab="builder">Builder</button>
+            <button class="sidebar-tab" id="history-tab" type="button" role="tab" aria-label="Open past reports tab" aria-selected="false" aria-controls="history-panel" data-sidebar-tab="history">Past Reports</button>
           </div>
 
           <div class="sidebar-tab-panel" id="builder-panel" role="tabpanel" aria-labelledby="builder-tab">
@@ -967,7 +1303,7 @@
             <p>Upload marketing performance data and generate a report-ready account summary with trend badges.</p>
             <form class="upload-box" id="upload-form">
               <label for="csv-file">Marketing CSV</label>
-              <input class="file-input" id="csv-file" type="file" name="file" accept=".csv">
+              <input class="file-input" id="csv-file" type="file" name="file" accept=".csv" aria-label="Upload marketing CSV">
               <div class="security-note">
                 <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
                   <rect x="4" y="10" width="16" height="10" rx="2"></rect>
@@ -983,7 +1319,7 @@
                 <div class="directive-grid">
                   <div class="directive-field">
                     <label for="directive-tone">Tone</label>
-                    <select id="directive-tone" name="tone">
+                    <select id="directive-tone" name="tone" aria-label="Select narrative tone">
                       <option>Boardroom</option>
                       <option>Startup</option>
                       <option>Precise</option>
@@ -992,7 +1328,7 @@
                   </div>
                   <div class="directive-field">
                     <label for="directive-goal">Goal</label>
-                    <select id="directive-goal" name="goal">
+                    <select id="directive-goal" name="goal" aria-label="Select narrative goal">
                       <option>Budget Request</option>
                       <option>Performance Fix</option>
                       <option>Retention</option>
@@ -1002,8 +1338,8 @@
                 <div class="directive-note">Fact-Check Lock keeps CSV numbers unchanged through generation and refinement.</div>
               </div>
               <div class="actions">
-                <button class="button" id="analyze-button" type="submit">Analyze CSV</button>
-                <button class="button secondary" id="sample-button" type="button">Use Sample</button>
+                <button class="button" id="analyze-button" type="submit" aria-label="Analyze uploaded CSV">Analyze CSV</button>
+                <button class="button secondary" id="sample-button" type="button" aria-label="Load sample marketing report">Use Sample</button>
               </div>
               <div class="form-status" id="form-status" role="status" aria-live="polite"></div>
               <div class="error" id="error" role="alert"></div>
@@ -1014,53 +1350,61 @@
             <h2>Past Reports</h2>
             <p>Saved reports stay inside this browser's Local History Vault.</p>
             <div class="history-actions">
-              <button class="copy-button" id="refresh-history" type="button">Refresh</button>
-              <button class="copy-button" id="clear-history" type="button">Clear Vault</button>
+              <button class="copy-button" id="refresh-history" type="button" aria-label="Refresh local report history">Refresh</button>
+              <button class="copy-button" id="clear-history" type="button" aria-label="Clear local report history vault">Clear Vault</button>
             </div>
             <div class="form-status" id="history-status" role="status" aria-live="polite"></div>
             <div class="history-list" id="history-list"></div>
           </div>
         </aside>
 
-        <section class="report" id="report" aria-busy="true">
-          <div class="report-branding skeleton-card"></div>
-          <div class="skeleton-card skeleton-report-source"></div>
+        <div class="drawer-backdrop" id="drawer-backdrop" hidden></div>
+
+        <section class="report" id="report" role="region" aria-label="Generated report preview" aria-busy="true" aria-live="polite">
+          <div class="report-branding skeleton-card skeleton-stage-stats"></div>
+          <div class="skeleton-card skeleton-report-source skeleton-stage-stats"></div>
           <div class="metrics">
-            <article class="skeleton-card skeleton-metric">
+            <article class="skeleton-card skeleton-metric skeleton-stage-stats">
               <div class="skeleton-block skeleton-line short"></div>
               <div class="skeleton-block skeleton-title"></div>
             </article>
-            <article class="skeleton-card skeleton-metric">
+            <article class="skeleton-card skeleton-metric skeleton-stage-stats">
               <div class="skeleton-block skeleton-line short"></div>
               <div class="skeleton-block skeleton-title"></div>
             </article>
-            <article class="skeleton-card skeleton-metric">
+            <article class="skeleton-card skeleton-metric skeleton-stage-stats">
               <div class="skeleton-block skeleton-line short"></div>
               <div class="skeleton-block skeleton-title"></div>
             </article>
-            <article class="skeleton-card skeleton-metric">
+            <article class="skeleton-card skeleton-metric skeleton-stage-stats">
               <div class="skeleton-block skeleton-line short"></div>
               <div class="skeleton-block skeleton-title"></div>
             </article>
           </div>
-          <section class="section skeleton-section">
+          <section class="section skeleton-section skeleton-stage-stats">
             <div class="skeleton-block skeleton-title"></div>
             <div class="skeleton-block skeleton-line long"></div>
             <div class="skeleton-block skeleton-line medium"></div>
             <div class="skeleton-block skeleton-line long"></div>
           </section>
-          <section class="section skeleton-section">
+          <section class="section skeleton-section skeleton-stage-chart">
             <div class="skeleton-block skeleton-title"></div>
             <div class="skeleton-block skeleton-bar"></div>
             <div class="skeleton-block skeleton-bar"></div>
             <div class="skeleton-block skeleton-bar"></div>
+          </section>
+          <section class="section skeleton-section skeleton-stage-narrative">
+            <div class="skeleton-block skeleton-title"></div>
+            <div class="skeleton-block skeleton-line long"></div>
+            <div class="skeleton-block skeleton-line long"></div>
+            <div class="skeleton-block skeleton-line medium"></div>
           </section>
         </section>
       </div>
     </main>
 
     <footer class="privacy-footer">
-      <button class="privacy-badge" id="privacy-open" type="button">Privacy & Security</button>
+      <button class="privacy-badge" id="privacy-open" type="button" aria-label="Open privacy and security details">Privacy & Security</button>
     </footer>
 
     <div class="modal-backdrop" id="privacy-modal" hidden>
@@ -1093,6 +1437,10 @@
       const directiveGoal = document.querySelector("#directive-goal");
       const systemStatus = document.querySelector("#system-status");
       const systemStatusText = document.querySelector("#system-status-text");
+      const mobileMenuButton = document.querySelector("#mobile-menu-button");
+      const drawerCloseButton = document.querySelector("#drawer-close");
+      const sidebarDrawer = document.querySelector("#builder-drawer");
+      const drawerBackdrop = document.querySelector("#drawer-backdrop");
       const sidebarTabButtons = document.querySelectorAll("[data-sidebar-tab]");
       const builderPanel = document.querySelector("#builder-panel");
       const historyPanel = document.querySelector("#history-panel");
@@ -1114,6 +1462,7 @@
       const historyDbVersion = 1;
       const historyStoreName = "reports";
       const historyVaultLimit = 30;
+      const drawerMediaQuery = window.matchMedia("(max-width: 767px)");
       let latestNarrative = "";
       let currentReportData = null;
       let currentReportDirective = { tone: "Boardroom", goal: "Budget Request" };
@@ -1161,10 +1510,67 @@
         }
       }
 
+      function isMobileDrawer() {
+        return drawerMediaQuery.matches;
+      }
+
+      function setDrawerAccessibility(isOpen) {
+        const hiddenOnMobile = isMobileDrawer() && !isOpen;
+        sidebarDrawer.setAttribute("aria-hidden", String(hiddenOnMobile));
+        if ("inert" in sidebarDrawer) {
+          sidebarDrawer.inert = hiddenOnMobile;
+        }
+      }
+
+      function setDrawerOpen(isOpen, options = {}) {
+        const shouldFocus = options.focus !== false;
+        sidebarDrawer.classList.toggle("is-open", isOpen);
+        drawerBackdrop.hidden = !isOpen;
+        mobileMenuButton.setAttribute("aria-expanded", String(isOpen));
+        document.body.classList.toggle("drawer-open", isOpen);
+        setDrawerAccessibility(isOpen);
+
+        if (isOpen && shouldFocus) {
+          const activeTab = sidebarDrawer.querySelector(".sidebar-tab.is-active");
+          window.setTimeout(() => activeTab?.focus(), 20);
+          return;
+        }
+
+        if (!isOpen && shouldFocus && sidebarDrawer.contains(document.activeElement)) {
+          mobileMenuButton.focus();
+        }
+      }
+
+      function openDrawer(options = {}) {
+        if (isMobileDrawer()) {
+          setDrawerOpen(true, options);
+        }
+      }
+
+      function closeDrawer(options = {}) {
+        setDrawerOpen(false, options);
+      }
+
+      function syncDrawerMode() {
+        if (!isMobileDrawer()) {
+          sidebarDrawer.classList.remove("is-open");
+          drawerBackdrop.hidden = true;
+          document.body.classList.remove("drawer-open");
+          mobileMenuButton.setAttribute("aria-expanded", "false");
+          sidebarDrawer.setAttribute("aria-hidden", "false");
+          if ("inert" in sidebarDrawer) {
+            sidebarDrawer.inert = false;
+          }
+          return;
+        }
+
+        setDrawerAccessibility(sidebarDrawer.classList.contains("is-open"));
+      }
+
       function renderReportSkeleton(message = "Preparing report...") {
         report.setAttribute("aria-busy", "true");
         report.innerHTML = `
-          <div class="report-branding">
+          <div class="report-branding skeleton-stage-stats">
             <div class="report-logo-slot">
               <div class="skeleton-block skeleton-title"></div>
             </div>
@@ -1174,32 +1580,32 @@
             </div>
           </div>
 
-          <div class="skeleton-card skeleton-report-source"></div>
+          <div class="skeleton-card skeleton-report-source skeleton-stage-stats"></div>
 
           <div class="metrics">
             ${Array.from({ length: 4 }).map(() => `
-              <article class="skeleton-card skeleton-metric">
+              <article class="skeleton-card skeleton-metric skeleton-stage-stats">
                 <div class="skeleton-block skeleton-line short"></div>
                 <div class="skeleton-block skeleton-title"></div>
               </article>
             `).join("")}
           </div>
 
-          <section class="section skeleton-section">
+          <section class="section skeleton-section skeleton-stage-stats">
             <div class="skeleton-block skeleton-title"></div>
             <div class="skeleton-block skeleton-line long"></div>
             <div class="skeleton-block skeleton-line medium"></div>
             <div class="skeleton-block skeleton-line long"></div>
           </section>
 
-          <section class="section skeleton-section">
+          <section class="section skeleton-section skeleton-stage-chart">
             <div class="skeleton-block skeleton-title"></div>
             <div class="skeleton-block skeleton-bar"></div>
             <div class="skeleton-block skeleton-bar"></div>
             <div class="skeleton-block skeleton-bar"></div>
           </section>
 
-          <section class="section skeleton-section">
+          <section class="section skeleton-section skeleton-stage-narrative">
             <div class="skeleton-block skeleton-title"></div>
             <div class="skeleton-block skeleton-line long"></div>
             <div class="skeleton-block skeleton-line long"></div>
@@ -1215,8 +1621,8 @@
             <strong>Elite Stability Notice</strong>
             <p>${escapeHtml(message)}</p>
             <div class="stability-actions">
-              <button class="copy-button" type="button" data-retry-action="${escapeHtml(retryAction)}">Retry</button>
-              <button class="copy-button" type="button" data-show-history>Past Reports</button>
+              <button class="copy-button" type="button" aria-label="Retry report generation" data-retry-action="${escapeHtml(retryAction)}">Retry</button>
+              <button class="copy-button" type="button" aria-label="Open past reports" data-show-history>Past Reports</button>
             </div>
           </section>
         `;
@@ -1436,8 +1842,8 @@
             <span>${escapeHtml(reportHistoryDate(record))} - ${escapeHtml(record.sourceLabel || "Local report")}</span>
             <span>${money(record.report?.stats?.total_revenue || record.stats?.total_revenue || 0)} secured return - ${(record.report?.stats?.avg_roas || record.stats?.avg_roas || 0)}x ROAS</span>
             <div class="history-entry-actions">
-              <button class="copy-button" type="button" data-history-open="${escapeHtml(record.id)}">View</button>
-              <button class="copy-button" type="button" data-history-delete="${escapeHtml(record.id)}">Delete</button>
+              <button class="copy-button" type="button" aria-label="View ${escapeHtml(reportHistoryTitle(record))}" data-history-open="${escapeHtml(record.id)}">View</button>
+              <button class="copy-button" type="button" aria-label="Delete ${escapeHtml(reportHistoryTitle(record))}" data-history-delete="${escapeHtml(record.id)}">Delete</button>
             </div>
           </article>
         `).join("");
@@ -1577,7 +1983,7 @@
         }
         narrativeContainer.setAttribute("aria-busy", "true");
         narrativeContainer.innerHTML = `
-          <div class="narrative-refinement-skeleton">
+          <div class="narrative-refinement-skeleton skeleton-stage-narrative">
             <div class="skeleton-block skeleton-line long"></div>
             <div class="skeleton-block skeleton-line medium"></div>
             <div class="skeleton-block skeleton-line long"></div>
@@ -1870,7 +2276,7 @@
               ${dailyTrends.length ? dailyTrends.map((day) => `
                 <div class="bar-row">
                   <span>${escapeHtml(day.date.slice(5))}</span>
-                  <div class="bar-track"><div class="bar" style="width: ${(day.revenue / maxRevenue) * 100}%"></div></div>
+                  <div class="bar-track" role="img" aria-label="Revenue for ${escapeHtml(day.date)} was ${escapeHtml(money(day.revenue))}"><div class="bar" style="width: ${(day.revenue / maxRevenue) * 100}%"></div></div>
                   <strong>${money(day.revenue)}</strong>
                 </div>
               `).join("") : '<div class="empty">No daily trend bars were saved for this local report.</div>'}
@@ -1881,16 +2287,16 @@
             <div class="section-head">
               <h2>Narrative</h2>
               <div class="section-actions">
-                <button class="copy-button" id="copy-narrative" type="button">Copy</button>
-                <button class="copy-button pdf-button" id="download-pdf" type="button">Download PDF</button>
+                <button class="copy-button" id="copy-narrative" type="button" aria-label="Copy narrative to clipboard">Copy</button>
+                <button class="copy-button pdf-button" id="download-pdf" type="button" aria-label="Download narrative report PDF">Download PDF</button>
               </div>
             </div>
-            <div class="narrative" id="narrative-container">${renderNarrative(data.narrative)}</div>
+            <div class="narrative" id="narrative-container" role="region" aria-label="Narrative rendering" aria-live="polite">${renderNarrative(data.narrative)}</div>
             <div class="refinement-panel">
               <div class="fact-lock-note">Fact-Check Lock active: CSV numbers stay unchanged.</div>
               <form class="refinement-chat" id="refinement-form">
-                <input id="refinement-input" name="instruction" type="text" placeholder="Tweak this report..." autocomplete="off">
-                <button class="copy-button" id="refine-button" type="submit">Refine</button>
+                <input id="refinement-input" name="instruction" type="text" placeholder="Tweak this report..." autocomplete="off" aria-label="Refinement request">
+                <button class="copy-button" id="refine-button" type="submit" aria-label="Refine generated narrative">Refine</button>
               </form>
               <div class="refinement-status" id="refinement-status" role="status" aria-live="polite"></div>
             </div>
@@ -1970,6 +2376,7 @@
         body.append("goal", directive.goal);
 
         try {
+          closeDrawer({ focus: false });
           renderReportSkeleton(`Generating ${file.name}...`);
           setBusy(true, `Generating ${file.name} with ${directiveLabel(directive)}...`);
           const { response, data } = await fetchJsonWithTimeout("/api/analyze", { method: "POST", body });
@@ -2015,11 +2422,27 @@
         });
       });
 
-      sampleButton.addEventListener("click", () => loadSample({ forceRefresh: true, saveToVault: true }));
+      sampleButton.addEventListener("click", () => {
+        closeDrawer({ focus: false });
+        loadSample({ forceRefresh: true, saveToVault: true });
+      });
 
       sidebarTabButtons.forEach((button) => {
         button.addEventListener("click", () => showSidebarTab(button.dataset.sidebarTab));
       });
+
+      mobileMenuButton.addEventListener("click", () => {
+        setDrawerOpen(!sidebarDrawer.classList.contains("is-open"));
+      });
+
+      drawerCloseButton.addEventListener("click", () => closeDrawer());
+      drawerBackdrop.addEventListener("click", () => closeDrawer());
+
+      if (drawerMediaQuery.addEventListener) {
+        drawerMediaQuery.addEventListener("change", syncDrawerMode);
+      } else {
+        drawerMediaQuery.addListener(syncDrawerMode);
+      }
 
       refreshHistoryButton.addEventListener("click", () => refreshHistoryList());
 
@@ -2062,6 +2485,7 @@
         renderReport(record.report, `Restored from Local History Vault - ${reportHistoryDate(record)}`);
         statusBox.className = "form-status success";
         statusBox.textContent = "Restored a locally saved report.";
+        closeDrawer({ focus: false });
         report.scrollIntoView({ behavior: "smooth", block: "start" });
       });
 
@@ -2085,6 +2509,11 @@
       document.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !privacyModal.hidden) {
           closePrivacyModal();
+          return;
+        }
+
+        if (event.key === "Escape" && sidebarDrawer.classList.contains("is-open")) {
+          closeDrawer();
         }
       });
 
@@ -2178,6 +2607,7 @@
 
         if (historyButton) {
           showSidebarTab("history");
+          openDrawer();
           return;
         }
 
@@ -2190,6 +2620,7 @@
           const file = csvFileInput.files[0];
           if (!file) {
             showSidebarTab("builder");
+            openDrawer();
             errorBox.textContent = "Choose a CSV file first.";
             return;
           }
@@ -2227,6 +2658,7 @@
       });
 
       updateDirectivePanel();
+      syncDrawerMode();
       refreshSystemStatus();
       window.setInterval(refreshSystemStatus, heartbeatIntervalMs);
       loadSample();

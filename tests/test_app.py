@@ -64,8 +64,13 @@ def test_index_has_nonce_csp(client):
     assert b"indexedDB.open" in response.data
     assert b"Privacy & Security" in response.data
     assert b"System Checking" in response.data
+    assert b'role="status" aria-label="System heartbeat status" aria-live="polite"' in response.data
     assert b"/api/system-status" in response.data
     assert b"renderReportSkeleton" in response.data
+    assert b"skeleton-stage-stats" in response.data
+    assert b"skeleton-stage-chart" in response.data
+    assert b"skeleton-stage-narrative" in response.data
+    assert b"animation-delay: var(--skeleton-delay, 0s)" in response.data
     assert b"Elite Stability Notice" in response.data
     assert b"Strategic Directive" in response.data
     assert b"directive-tone" in response.data
@@ -73,6 +78,16 @@ def test_index_has_nonce_csp(client):
     assert b"Tweak this report..." in response.data
     assert b"/refine" in response.data
     assert b"Fact-Check Lock" in response.data
+    assert b'id="mobile-menu-button"' in response.data
+    assert b'aria-controls="builder-drawer"' in response.data
+    assert b'id="builder-drawer"' in response.data
+    assert b'id="drawer-backdrop"' in response.data
+    assert b"setDrawerOpen" in response.data
+    assert b"drawerMediaQuery" in response.data
+    assert b'aria-label="Upload marketing CSV"' in response.data
+    assert b'aria-label="Copy narrative to clipboard"' in response.data
+    assert b":focus-visible" in response.data
+    assert b'aria-live="polite"' in response.data
 
 
 def test_system_status_ready(client, monkeypatch):
